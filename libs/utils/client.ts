@@ -72,6 +72,43 @@ export async function postSlackMessage(
   });
 }
 
+export async function scheduleSlackMessage(
+  channel: string,
+  message: { text: string; blocks: SlackBlock[] },
+  postAt: number,
+) {
+  const result = await callSlack<
+    SlackApiResponse & { scheduled_message_id?: string }
+  >("chat.scheduleMessage", { channel, post_at: postAt, ...message });
+
+  return result.scheduled_message_id;
+}
+
+// false means Slack no longer holds it: already posted, already cancelled, or inside
+// the final minute before post_at, when Slack stops allowing deletes.
+export async function deleteScheduledSlackMessage(
+  channel: string,
+  scheduledMessageId: string,
+) {
+  try {
+    await callSlack("chat.deleteScheduledMessage", {
+      channel,
+      scheduled_message_id: scheduledMessageId,
+    });
+
+    return true;
+  } catch (error) {
+    if (
+      error instanceof SlackApiError &&
+      error.slackError === "invalid_scheduled_message_id"
+    ) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 export async function updateSlackMessage(
   channel: string,
   ts: string,

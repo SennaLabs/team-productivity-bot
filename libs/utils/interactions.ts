@@ -5,6 +5,8 @@ import {
   createPrMergedMessage,
   createPrMergedUpdate,
   createPrMessage,
+  createPrScheduleClosedUpdate,
+  createPrScheduledNotice,
   decodeActionValue,
   decodeWatcherUserIds,
   parsePrPriority,
@@ -18,10 +20,12 @@ import type {
   SlackInteractionPayload,
 } from "@/models/slack-api";
 import {
+  deleteScheduledSlackMessage,
   deleteSlackMessage,
   getSlackMember,
   postSlackEphemeral,
   postSlackMessage,
+  scheduleSlackMessage,
   updateSlackMessage,
 } from "@/libs/utils/client";
 import {
@@ -41,6 +45,7 @@ import {
   parsePrUrl,
   parseInteractionPayload,
   parsePositiveInteger,
+  resolvePrPostAt,
   splitTicketLinks,
 } from "@/libs/utils/requests";
 import {
@@ -104,17 +109,37 @@ async function publishIssue(submission: IssueSubmission) {
   ]);
 }
 
-async function publishPr(submission: PrSubmission) {
-  if (!submission.channel.channelId) {
+async function publishPr(submission: PrSubmission, postAt: number | null) {
+  const channelId = submission.channel.channelId;
+
+  if (!channelId) {
     throw new Error("Channel ID is missing from private_metadata");
   }
 
   // ponytail: nothing is stored and no dashboard reads this, so <@id> mentions are
   // enough — skips the users.info fan-out publishIssue needs for saved display names.
-  await postSlackMessage(
-    submission.channel.channelId,
-    createPrMessage(submission),
+  const message = createPrMessage(submission);
+
+  if (postAt === null) {
+    await postSlackMessage(channelId, message);
+    return;
+  }
+
+  const scheduledMessageId = await scheduleSlackMessage(
+    channelId,
+    message,
+    postAt,
   );
+
+  // The scheduled_message_id exists nowhere else, so the creator's DM with the bot
+  // holds it on the Cancel button. Only they can see that DM, so the button needs
+  // no owner check. See docs/adr/0003.
+  if (submission.userId && scheduledMessageId) {
+    await postSlackMessage(
+      submission.userId,
+      createPrScheduledNotice(submission, postAt, scheduledMessageId),
+    );
+  }
 }
 
 function runAfterResponse(task: () => Promise<void>) {
@@ -231,6 +256,18 @@ function handlePrSubmission(payload: SlackInteractionPayload) {
     });
   }
 
+  const schedule = resolvePrPostAt(
+    getInput(payload, "send_at", "send_at_select")?.selected_option?.value,
+    getInput(payload, "send_custom", "send_custom_input")?.selected_date_time,
+  );
+
+  if ("error" in schedule) {
+    return Response.json({
+      response_action: "errors",
+      errors: { send_custom: schedule.error },
+    });
+  }
+
   const submission: PrSubmission = {
     channel: getChannelContext(payload),
     ...getSubmissionIdentity(payload),
@@ -246,7 +283,7 @@ function handlePrSubmission(payload: SlackInteractionPayload) {
     watcherUserIds,
   };
 
-  runAfterResponse(() => publishPr(submission));
+  runAfterResponse(() => publishPr(submission, schedule.postAt));
 
   return new Response(null, { status: 200 });
 }
@@ -311,6 +348,34 @@ function handleMessageAction(payload: SlackInteractionPayload) {
       }
 
       await Promise.all(tasks);
+    });
+
+    return new Response(null, { status: 200 });
+  }
+
+  if (action.action_id === "pr_schedule_cancel" && selected.action === "cancel") {
+    const [targetChannelId, scheduledMessageId] = selected.fields;
+
+    if (!targetChannelId || !scheduledMessageId) {
+      return new Response(null, { status: 200 });
+    }
+
+    runAfterResponse(async () => {
+      const cancelled = await deleteScheduledSlackMessage(
+        targetChannelId,
+        scheduledMessageId,
+      );
+
+      await updateSlackMessage(
+        channelId,
+        messageTs,
+        createPrScheduleClosedUpdate(
+          payload.message ?? {},
+          cancelled
+            ? ":x: *ยกเลิกแล้ว*"
+            : ":information_source: โพสต์ไปแล้ว ใช้ Delete ที่ข้อความแทน",
+        ),
+      );
     });
 
     return new Response(null, { status: 200 });

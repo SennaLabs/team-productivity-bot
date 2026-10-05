@@ -4,6 +4,7 @@ import { afterEach, test } from "node:test";
 import {
   isValidSlackRequest,
   parsePrUrl,
+  resolvePrPostAt,
   splitTicketLinks,
 } from "./requests.ts";
 
@@ -137,4 +138,39 @@ test("keeps free text on a line intact instead of splitting on spaces", () => {
 test("returns an empty list when no tickets were given", () => {
   assert.deepEqual(splitTicketLinks(undefined), []);
   assert.deepEqual(splitTicketLinks("   \n  "), []);
+});
+
+test("schedules Tomorrow 09:00 on the next calendar day in the team timezone", () => {
+  const at = (iso: string) => Date.parse(iso) / 1000;
+  const tomorrow = (now: string) =>
+    resolvePrPostAt("tomorrow", undefined, new Date(now), "Asia/Bangkok");
+
+  assert.deepEqual(tomorrow("2026-10-05T20:00:00+07:00"), {
+    postAt: at("2026-10-06T09:00:00+07:00"),
+  });
+  // 00:30 Bangkok is still the previous day in UTC — tomorrow must follow Bangkok.
+  assert.deepEqual(tomorrow("2026-10-06T00:30:00+07:00"), {
+    postAt: at("2026-10-07T09:00:00+07:00"),
+  });
+  assert.deepEqual(tomorrow("2026-10-31T10:00:00+07:00"), {
+    postAt: at("2026-11-01T09:00:00+07:00"),
+  });
+});
+
+test("sends now unless Tomorrow or Custom is picked", () => {
+  assert.deepEqual(resolvePrPostAt("now", 1), { postAt: null });
+  assert.deepEqual(resolvePrPostAt(undefined, 1), { postAt: null });
+});
+
+test("accepts only a Custom time between 1 minute and 120 days ahead", () => {
+  const now = new Date("2026-10-05T10:00:00Z");
+  const nowSeconds = now.getTime() / 1000;
+  const custom = (seconds: number | undefined) =>
+    resolvePrPostAt("custom", seconds, now);
+
+  assert.ok("error" in custom(undefined));
+  assert.ok("error" in custom(nowSeconds - 300));
+  assert.ok("error" in custom(nowSeconds + 30));
+  assert.ok("error" in custom(nowSeconds + 121 * 24 * 60 * 60));
+  assert.deepEqual(custom(nowSeconds + 3600), { postAt: nowSeconds + 3600 });
 });
