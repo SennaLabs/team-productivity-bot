@@ -264,6 +264,68 @@ export function createPrMessage(submission: PrSubmission) {
   };
 }
 
+export function createPrScheduledNotice(
+  submission: PrSubmission,
+  postAt: number,
+  scheduledMessageId: string,
+) {
+  const channelId = submission.channel.channelId ?? "";
+  // Slack renders this token in each viewer's own timezone; the text after | is
+  // only shown by clients that cannot.
+  const when = `<!date^${postAt}^{date_short_pretty} {time}|${new Date(postAt * 1000).toISOString()}>`;
+
+  return {
+    text: `ตั้งเวลาส่งคำขอรีวิว PR ไว้ ${when}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `:alarm_clock: ตั้งเวลาส่งคำขอรีวิว PR ไปที่ <#${channelId}> ${when}\n*PR:* ${escapeMrkdwn(submission.prUrl)}`,
+        },
+      },
+      {
+        type: "actions",
+        block_id: "pr_schedule_actions",
+        elements: [
+          {
+            type: "button",
+            action_id: "pr_schedule_cancel",
+            style: "danger",
+            text: { type: "plain_text", text: "Cancel" },
+            value: encodeActionValue("cancel", channelId, scheduledMessageId),
+            confirm: {
+              title: { type: "plain_text", text: "ยกเลิกการตั้งเวลา" },
+              text: {
+                type: "plain_text",
+                text: "คำขอรีวิว PR นี้จะไม่ถูกโพสต์",
+              },
+              confirm: { type: "plain_text", text: "ยกเลิกการส่ง" },
+              deny: { type: "plain_text", text: "ไม่ยกเลิก" },
+              style: "danger",
+            },
+          },
+        ],
+      },
+    ] satisfies SlackBlock[],
+  };
+}
+
+export function createPrScheduleClosedUpdate(
+  message: { blocks?: SlackBlock[] },
+  status: string,
+) {
+  return {
+    text: status,
+    blocks: [
+      ...(message.blocks ?? []).filter(
+        (block) => (block as PrActionsBlock).block_id !== "pr_schedule_actions",
+      ),
+      { type: "context", elements: [{ type: "mrkdwn", text: status }] },
+    ] satisfies SlackBlock[],
+  };
+}
+
 export function createPrMergedMessage(watcherUserIds: string[]) {
   const watchers = watcherUserIds
     .map((watcherId) => `<@${watcherId}>`)

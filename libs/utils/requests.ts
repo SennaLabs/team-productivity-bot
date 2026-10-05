@@ -187,6 +187,80 @@ export function getCalendarDate(
   }
 }
 
+function getWallClockMs(date: Date, timezone: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, Number(part.value)]),
+  );
+
+  return Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+}
+
+function getTomorrowAtNine(now: Date, timezone: string) {
+  const [year, month, day] = formatDateInTimezone(now, timezone)
+    .split("-")
+    .map(Number);
+  const wallClock = Date.UTC(year, month - 1, day + 1, 9);
+  // ponytail: one offset lookup, an hour off only if a DST switch falls between
+  // midnight and 09:00 — re-check the offset at the result if a DST zone is used.
+  const offset = getWallClockMs(new Date(wallClock), timezone) - wallClock;
+
+  return Math.floor((wallClock - offset) / 1000);
+}
+
+// Slack refuses post_at in the past or beyond 120 days; the one-minute floor keeps a
+// pick that is "now" by the time it reaches Slack from failing after the modal closed.
+const MIN_SCHEDULE_SECONDS = 60;
+const MAX_SCHEDULE_SECONDS = 120 * 24 * 60 * 60;
+
+export function resolvePrPostAt(
+  send: string | undefined,
+  customSeconds: number | undefined,
+  now = new Date(),
+  timezone = getCalendarDate(undefined).timezone,
+): { postAt: number | null } | { error: string } {
+  if (send === "tomorrow") {
+    return { postAt: getTomorrowAtNine(now, timezone) };
+  }
+
+  if (send !== "custom") {
+    return { postAt: null };
+  }
+
+  if (customSeconds === undefined) {
+    return { error: "เลือกวันและเวลาที่จะส่ง" };
+  }
+
+  const secondsAhead = customSeconds - now.getTime() / 1000;
+
+  if (secondsAhead < MIN_SCHEDULE_SECONDS) {
+    return { error: "เวลาต้องอยู่ในอนาคตอย่างน้อย 1 นาที" };
+  }
+
+  if (secondsAhead > MAX_SCHEDULE_SECONDS) {
+    return { error: "ตั้งเวลาได้ไม่เกิน 120 วัน" };
+  }
+
+  return { postAt: customSeconds };
+}
+
 export function parsePrUrl(value: string | undefined) {
   const trimmed = value?.trim();
 

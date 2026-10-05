@@ -142,6 +142,12 @@ export function createDailyModal(
   };
 }
 
+const SEND_OPTIONS = [
+  { value: "now", text: "Now" },
+  { value: "tomorrow", text: "Tomorrow 09:00" },
+  { value: "custom", text: "Custom" },
+].map(({ value, text }) => ({ value, text: { type: "plain_text", text } }));
+
 export function createPrModal(metadata: SlackModalMetadata): SlackModal {
   return {
     type: "modal",
@@ -223,6 +229,30 @@ export function createPrModal(metadata: SlackModalMetadata): SlackModal {
             type: "plain_text",
             text: "เลือกคนที่ต้องการให้รู้ตอน merge",
           },
+        },
+      },
+      {
+        type: "input",
+        block_id: "send_at",
+        label: { type: "plain_text", text: "Send" },
+        element: {
+          type: "radio_buttons",
+          action_id: "send_at_select",
+          initial_option: SEND_OPTIONS[0],
+          options: SEND_OPTIONS,
+        },
+      },
+      {
+        type: "input",
+        block_id: "send_custom",
+        optional: true,
+        label: { type: "plain_text", text: "Custom time" },
+        // Slack cannot show this only when Custom is picked without a views.update
+        // round-trip per click, so it always shows and is read only for Custom.
+        hint: { type: "plain_text", text: "ใช้เมื่อเลือก Custom" },
+        element: {
+          type: "datetimepicker",
+          action_id: "send_custom_input",
         },
       },
     ],

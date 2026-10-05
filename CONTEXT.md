@@ -31,3 +31,13 @@ _Avoid_: Assignee
 **Company Member**:
 A person with a verified Google identity whose email belongs to the approved company domain. Only Company Members may access the dashboard and its data APIs.
 _Avoid_: Google user, dashboard user
+
+**PR Review Request**:
+A request, created by one Slack member in a Slack Channel, for one or more Reviewers to review a pull request.
+_Avoid_: PR post, PR message
+_Added_: 2026-10-05
+
+**Scheduled PR Review Request**:
+A PR Review Request that its creator set to post at a later time and that has not posted yet. Only its creator can cancel it; once it posts it is an ordinary PR Review Request and can no longer be cancelled, only deleted.
+_Avoid_: Scheduled message, scheduleMessage
+_Added_: 2026-10-05
