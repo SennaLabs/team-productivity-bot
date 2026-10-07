@@ -14,6 +14,7 @@ export type DailyRecord = {
   date: string;
   timezone: string;
   submittedAt: string | null;
+  note: string | null;
 };
 
 export type DashboardMember = {

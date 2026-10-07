@@ -195,6 +195,7 @@ function handleDailySubmission(payload: SlackInteractionPayload) {
     durationMinutes:
       getMinutesSinceMidnight(endTime) - getMinutesSinceMidnight(startTime),
     ...calendarDate,
+    note: getInput(payload, "note", "note_input")?.value,
   };
 
   runAfterResponse(() => publishDaily(submission));

@@ -118,6 +118,7 @@ export async function listDailySubmissions(
       date: toString(data.date, document.id),
       timezone: toString(data.timezone, "Asia/Bangkok"),
       submittedAt: toIsoString(data.submittedAt),
+      note: toNullableString(data.note),
     };
   });
 }
@@ -208,6 +209,8 @@ export async function saveDailySubmission(submission: DailySubmission) {
     durationMinutes: submission.durationMinutes,
     date: submission.date,
     timezone: submission.timezone,
+    // Written even when empty so a resubmission clears the date's previous note.
+    note: submission.note ?? null,
   };
 
   batch.set(channel, channelData(submission.channel), { merge: true });
@@ -223,12 +226,12 @@ export async function saveDailySubmission(submission: DailySubmission) {
   await batch.commit();
 }
 
-// Dashboard edits only touch the time fields so the Slack submitter stays on the
-// record; a date entered from the dashboard is attributed to the session user.
+// Dashboard edits only touch the time and note fields so the Slack submitter stays
+// on the record; a date entered from the dashboard is attributed to the session user.
 export async function saveDashboardDailyTime(
   channelId: string,
   date: string,
-  time: Pick<DailyRecord, "startTime" | "endTime" | "durationMinutes">,
+  time: Pick<DailyRecord, "startTime" | "endTime" | "durationMinutes" | "note">,
   editorName: string,
 ) {
   const record = getChannelDocument(channelId)

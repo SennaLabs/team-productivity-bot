@@ -51,7 +51,7 @@ export async function getDailyRecords(channelId: string) {
 export async function saveDailyRecord(
   channelId: string,
   date: string,
-  time: { startTime: string; endTime: string },
+  time: { startTime: string; endTime: string; note?: string },
 ) {
   await requestJson<void>(
     `/api/channels/${encodeURIComponent(channelId)}/daily/${encodeURIComponent(date)}`,

@@ -81,6 +81,7 @@ export type DailySubmission = {
   durationMinutes: number;
   date: string;
   timezone: string;
+  note?: string;
 };
 
 export type DailyTimeRange = {

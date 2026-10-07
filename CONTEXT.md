@@ -14,7 +14,7 @@ Configuration that applies to one Slack Channel. The first setting is the Daily 
 The default start and end times shown when a member opens the Daily modal for a Slack Channel.
 
 **Daily Submission**:
-The current Daily time range for one calendar date in a Slack Channel. A Slack Channel has at most one Daily Submission per date; submitting again replaces that date's current values.
+The current Daily time range, plus an optional note, for one calendar date in a Slack Channel. A Slack Channel has at most one Daily Submission per date; submitting again replaces that date's current values.
 
 **Issue Submission**:
 A request for help created by one Slack member in a Slack Channel and directed to zero or more Asked Members.

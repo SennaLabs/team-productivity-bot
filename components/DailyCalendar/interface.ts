@@ -8,6 +8,7 @@ export interface WithDailyCalendarProps {
 export interface DailyTimeValues {
   startTime: string;
   endTime: string;
+  note?: string;
 }
 
 export interface DailyCalendarProps {

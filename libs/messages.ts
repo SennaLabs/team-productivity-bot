@@ -98,8 +98,9 @@ function escapeMrkdwn(value: string | undefined) {
 }
 
 export function createDailyMessage(submission: DailySubmission) {
-  const { startTime, endTime, userId, userName } = submission;
-  const summary = `*Daily Meeting:* ${startTime}–${endTime} · โดย  <@${userId}>`;
+  const { startTime, endTime, userId, userName, note } = submission;
+  const noteText = note ? `\n*Note:* ${escapeMrkdwn(note)}` : "";
+  const summary = `*Daily Meeting:* ${startTime}–${endTime} · โดย  <@${userId}>${noteText}`;
 
   return {
     text: `Daily Meeting: ${startTime}–${endTime} โดย ${userName ?? userId}`,

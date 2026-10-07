@@ -100,6 +100,11 @@ export function DailyCalendar({
                     {record.durationMinutes} นาที ·{" "}
                     {record.userName || record.userId || "-"}
                   </span>
+                  {record.note && (
+                    <span className="daily-cell-meta" title={record.note}>
+                      {record.note}
+                    </span>
+                  )}
                 </div>
               )}
               {/* Clicking a date in the neighbouring month switches the panel, and
@@ -176,6 +181,7 @@ export function DailyCalendar({
             selectedRecord && {
               startTime: selectedRecord.startTime,
               endTime: selectedRecord.endTime,
+              note: selectedRecord.note ?? undefined,
             }
           }
           onFinish={onSave}
@@ -209,6 +215,12 @@ export function DailyCalendar({
             ]}
           >
             <Input type="time" />
+          </Form.Item>
+          <Form.Item name="note" label="Note">
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              placeholder="ข้อมูลเพิ่ม"
+            />
           </Form.Item>
         </Form>
       </Modal>

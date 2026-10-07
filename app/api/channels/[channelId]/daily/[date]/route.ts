@@ -22,14 +22,17 @@ export async function PUT(
   const body = (await request.json().catch(() => null)) as {
     startTime?: unknown;
     endTime?: unknown;
+    note?: unknown;
   } | null;
   const startTime = body?.startTime;
   const endTime = body?.endTime;
+  const note = body?.note ?? "";
 
   if (
     !DATE_PATTERN.test(date) ||
     typeof startTime !== "string" ||
     typeof endTime !== "string" ||
+    typeof note !== "string" ||
     !TIME_PATTERN.test(startTime) ||
     !TIME_PATTERN.test(endTime)
   ) {
@@ -50,7 +53,7 @@ export async function PUT(
     await saveDashboardDailyTime(
       channelId,
       date,
-      { startTime, endTime, durationMinutes },
+      { startTime, endTime, durationMinutes, note: note.trim() || null },
       user.name ?? user.email,
     );
 
