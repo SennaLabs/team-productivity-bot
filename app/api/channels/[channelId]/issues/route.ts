@@ -77,7 +77,9 @@ export async function POST(
       listChannelMembers(channelId),
     ]);
     const memberNames = new Map(
-      members.map((member) => [member.userId, member.userName]),
+      members
+        .filter((member) => member.active)
+        .map((member) => [member.userId, member.userName]),
     );
 
     if (!channel) {

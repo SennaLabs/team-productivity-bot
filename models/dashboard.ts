@@ -25,6 +25,7 @@ export type DashboardMember = {
 export type ChannelMember = {
   userId: string;
   userName: string;
+  active: boolean;
 };
 
 export type NewIssueValues = {

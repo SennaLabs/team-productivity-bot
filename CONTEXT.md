@@ -30,7 +30,7 @@ The Slack member, or the Company Member on the dashboard, who submits an Issue S
 _Avoid_: Owner, submitter
 
 **Channel Member**:
-A person who was in a Slack Channel at its last member sync. Only Channel Members can be picked as Asked Members on the dashboard; in Slack, anyone in the workspace can be asked.
+A person who was in a Slack Channel at its last member sync. Only Channel Members can be picked as Asked Members on the dashboard; in Slack, anyone in the workspace can be asked. Someone who has left the channel is no longer a Channel Member, but their name is kept so past Issue Submissions can still show it.
 _Avoid_: Project member, team member
 _Added_: 2026-10-07
 

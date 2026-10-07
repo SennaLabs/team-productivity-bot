@@ -200,12 +200,16 @@ export async function listChannelMembers(
   return snapshot.docs.map((document) => ({
     userId: document.id,
     userName: toString(document.get("userName"), document.id),
+    // Rows synced before the flag existed were all current members.
+    active: document.get("active") !== false,
   }));
 }
 
-// ponytail: one batch caps a sync at 500 writes (members plus departures); move
-// to bulkWriter if a channel outgrows that.
-export async function replaceChannelMembers(
+// People who left are flagged, not deleted, so old issues that only stored their
+// Slack ID can still show their name.
+// ponytail: one batch caps a sync at 500 writes (members plus new departures);
+// move to bulkWriter if a channel outgrows that.
+export async function saveChannelMembers(
   channelId: string,
   members: SlackMember[],
 ) {
@@ -215,14 +219,19 @@ export async function replaceChannelMembers(
   const batch = getDatabase().batch();
 
   for (const document of existing.docs) {
-    if (!currentIds.has(document.id)) {
-      batch.delete(document.ref);
+    if (!currentIds.has(document.id) && document.get("active") !== false) {
+      batch.set(
+        document.ref,
+        { active: false, syncedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
     }
   }
 
   for (const member of members) {
     batch.set(collection.doc(member.id), {
       userName: member.name,
+      active: true,
       syncedAt: FieldValue.serverTimestamp(),
     });
   }

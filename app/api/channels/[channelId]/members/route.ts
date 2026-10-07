@@ -1,6 +1,6 @@
 import {
   listChannelMembers,
-  replaceChannelMembers,
+  saveChannelMembers,
 } from "@/libs/repositories/channel-repository";
 import { getSessionUser, unauthorizedResponse } from "@/libs/auth/session";
 import { listSlackChannelMembers } from "@/libs/utils/client";
@@ -16,7 +16,9 @@ export async function GET(
   try {
     const { channelId } = await params;
 
-    return Response.json({ members: await listChannelMembers(channelId) });
+    const members = await listChannelMembers(channelId);
+
+    return Response.json({ members: members.filter((member) => member.active) });
   } catch (error) {
     console.error("Unable to list Channel Members", error);
     return Response.json(
@@ -37,7 +39,7 @@ export async function POST(
   try {
     const { channelId } = await params;
 
-    await replaceChannelMembers(
+    await saveChannelMembers(
       channelId,
       await listSlackChannelMembers(channelId),
     );
