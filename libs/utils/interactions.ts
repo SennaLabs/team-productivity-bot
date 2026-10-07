@@ -8,12 +8,14 @@ import {
   createPrScheduleClosedUpdate,
   createPrScheduledNotice,
   decodeActionValue,
-  decodeWatcherUserIds,
+  decodePrMergedAction,
+  parseMergeNotifyMinutes,
   parsePrPriority,
   isMessageOwner,
   MAX_WATCHER_COUNT,
+  MAX_WATCHER_NOTE_LENGTH,
 } from "@/libs/messages";
-import { createIssueModal } from "@/libs/modals";
+import { createIssueModal, createPrModal } from "@/libs/modals";
 import type {
   DailySubmission,
   IssueSubmission,
@@ -29,6 +31,7 @@ import {
   postSlackMessage,
   scheduleSlackMessage,
   updateSlackMessage,
+  updateSlackModal,
 } from "@/libs/utils/client";
 import {
   deleteIssueSubmission,
@@ -293,6 +296,19 @@ function handlePrSubmission(payload: SlackInteractionPayload) {
     });
   }
 
+  const watcherNote =
+    getInput(payload, "watcher_note", "watcher_note_input")?.value?.trim() ||
+    undefined;
+
+  if (watcherNote && watcherNote.length > MAX_WATCHER_NOTE_LENGTH) {
+    return Response.json({
+      response_action: "errors",
+      errors: {
+        watcher_note: `ข้อความยาวได้ไม่เกิน ${MAX_WATCHER_NOTE_LENGTH} ตัวอักษร`,
+      },
+    });
+  }
+
   const schedule = resolvePrPostAt(
     getInput(payload, "send_at", "send_at_select")?.selected_option?.value,
     getInput(payload, "send_custom", "send_custom_input")?.selected_date_time,
@@ -318,6 +334,10 @@ function handlePrSubmission(payload: SlackInteractionPayload) {
     reviewerUserIds:
       getInput(payload, "reviewer", "reviewer_select")?.selected_users ?? [],
     watcherUserIds,
+    mergeNotifyMinutes: parseMergeNotifyMinutes(
+      getInput(payload, "merge_notify", "merge_notify_input")?.value,
+    ),
+    watcherNote,
   };
 
   runAfterResponse(() => publishPr(submission, schedule.postAt));
@@ -357,10 +377,11 @@ function handleMessageAction(payload: SlackInteractionPayload) {
   };
 
   if (action.action_id === "pr_merged" && selected.action === "merged") {
-    const watcherUserIds = decodeWatcherUserIds(selected.fields[0]);
+    const { watcherUserIds, notifyAfterMinutes, watcherNote } =
+      decodePrMergedAction(selected.fields);
 
     runAfterResponse(async () => {
-      const tasks = [
+      const tasks: Promise<unknown>[] = [
         // The ✅ marker this leaves behind is what tells the channel the PR is in,
         // and it is also what removes the Merged option from the menu.
         // ponytail: two picks in the same instant can still both land — a lock
@@ -372,15 +393,20 @@ function handleMessageAction(payload: SlackInteractionPayload) {
         ),
       ];
 
-      // With nobody to mention, the ✅ marker above already says it all and a
-      // thread reply would just be noise.
-      if (watcherUserIds.length) {
+      // With nobody to mention and nothing to say, the ✅ marker above already
+      // says it all and a thread reply would just be noise.
+      if (watcherUserIds.length || watcherNote) {
+        const reply = createPrMergedMessage(watcherUserIds, watcherNote);
+
         tasks.push(
-          postSlackMessage(
-            channelId,
-            createPrMergedMessage(watcherUserIds),
-            messageTs,
-          ),
+          notifyAfterMinutes
+            ? scheduleSlackMessage(
+                channelId,
+                reply,
+                Math.floor(Date.now() / 1000) + notifyAfterMinutes * 60,
+                messageTs,
+              )
+            : postSlackMessage(channelId, reply, messageTs),
         );
       }
 
@@ -448,6 +474,30 @@ function handleMessageAction(payload: SlackInteractionPayload) {
   return new Response(null, { status: 200 });
 }
 
+function handleViewAction(payload: SlackInteractionPayload) {
+  const action = payload.actions?.[0];
+  const viewId = payload.view?.id;
+  const privateMetadata = payload.view?.private_metadata;
+
+  if (action?.action_id !== "pr_options_toggle" || !viewId || !privateMetadata) {
+    return new Response(null, { status: 200 });
+  }
+
+  // ponytail: no view hash, so two quick clicks resolve as last write wins, which is
+  // also the state the checkbox shows last.
+  runAfterResponse(() =>
+    updateSlackModal(
+      viewId,
+      createPrModal(
+        JSON.parse(privateMetadata),
+        Boolean(action.selected_options?.length),
+      ),
+    ),
+  );
+
+  return new Response(null, { status: 200 });
+}
+
 export async function handleSlackInteraction(request: Request) {
   const rawBody = await request.text();
 
@@ -462,7 +512,7 @@ export async function handleSlackInteraction(request: Request) {
   }
 
   if (payload.type === "block_actions") {
-    return handleMessageAction(payload);
+    return payload.view ? handleViewAction(payload) : handleMessageAction(payload);
   }
 
   if (
