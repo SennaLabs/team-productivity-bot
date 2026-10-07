@@ -57,8 +57,12 @@ export type SlackInteractionPayload = {
     selected_option?: {
       value?: string;
     };
+    selected_options?: {
+      value?: string;
+    }[];
   }[];
   view?: {
+    id?: string;
     callback_id?: string;
     private_metadata?: string;
     state?: {
@@ -141,4 +145,6 @@ export type PrSubmission = {
   priority: PrPriority;
   reviewerUserIds: string[];
   watcherUserIds: string[];
+  mergeNotifyMinutes: number;
+  watcherNote?: string;
 };

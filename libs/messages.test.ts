@@ -6,11 +6,13 @@ import {
   createPrMergedUpdate,
   createPrMessage,
   decodeActionValue,
+  decodePrMergedAction,
   decodeWatcherUserIds,
   DEFAULT_PR_PRIORITY,
   encodeActionValue,
   isMessageOwner,
   MAX_WATCHER_COUNT,
+  MAX_WATCHER_NOTE_LENGTH,
   parsePrPriority,
   PR_PRIORITIES,
 } from "./messages.ts";
@@ -41,6 +43,7 @@ function prSubmission(overrides: Partial<PrSubmission> = {}): PrSubmission {
     priority: "normal",
     reviewerUserIds: ["U2", "U3"],
     watcherUserIds: [],
+    mergeNotifyMinutes: 0,
     ...overrides,
   };
 }
@@ -173,15 +176,21 @@ type OverflowBlock = {
   }[];
 };
 
-function prActions(watcherUserIds: string[]) {
+function prActions(
+  watcherUserIds: string[],
+  overrides: Partial<PrSubmission> = {},
+) {
   return blockOfType(
-    createPrMessage(prSubmission({ watcherUserIds })),
+    createPrMessage(prSubmission({ watcherUserIds, ...overrides })),
     "actions",
   ) as unknown as OverflowBlock;
 }
 
-function prMergedButton(watcherUserIds: string[]) {
-  return prActions(watcherUserIds).elements.find(
+function prMergedButton(
+  watcherUserIds: string[],
+  overrides: Partial<PrSubmission> = {},
+) {
+  return prActions(watcherUserIds, overrides).elements.find(
     (element) => element.action_id === "pr_merged",
   );
 }
@@ -235,22 +244,58 @@ test("carries the watchers on the Merged button instead", () => {
 test("keeps the Merged button usable when nobody is watching", () => {
   const merged = prMergedButton([]);
 
-  assert.equal(merged?.value, "merged:");
   assert.deepEqual(
-    decodeWatcherUserIds(decodeActionValue(merged?.value)?.fields[0]),
-    [],
+    decodePrMergedAction(decodeActionValue(merged?.value)?.fields ?? []),
+    { watcherUserIds: [], notifyAfterMinutes: 0, watcherNote: undefined },
   );
 });
 
-test("keeps a full watcher list inside Slack's 2000 char button cap", () => {
+test("carries the delay and a note containing colons on the Merged button", () => {
+  const merged = prMergedButton(["U_W1"], {
+    mergeNotifyMinutes: 15,
+    watcherNote: "staging: ready at 10:30",
+  });
+
+  assert.deepEqual(
+    decodePrMergedAction(decodeActionValue(merged?.value)?.fields ?? []),
+    {
+      watcherUserIds: ["U_W1"],
+      notifyAfterMinutes: 15,
+      watcherNote: "staging: ready at 10:30",
+    },
+  );
+});
+
+test("reads a Merged button posted before delay and note existed", () => {
+  assert.deepEqual(
+    decodePrMergedAction(decodeActionValue("merged:U_W1,U_W2")?.fields ?? []),
+    { watcherUserIds: ["U_W1", "U_W2"], notifyAfterMinutes: 0, watcherNote: undefined },
+  );
+});
+
+test("clamps a delay beyond the 60 minute cap", () => {
+  assert.equal(decodePrMergedAction(["U_W1", "999"]).notifyAfterMinutes, 60);
+});
+
+test("treats a negative or non-numeric delay as posting now", () => {
+  assert.equal(decodePrMergedAction(["U_W1", "-5"]).notifyAfterMinutes, 0);
+  assert.equal(decodePrMergedAction(["U_W1", "abc"]).notifyAfterMinutes, 0);
+});
+
+test("keeps full watchers and a full note inside Slack's 2000 char button cap", () => {
   const userIds = Array.from(
     { length: MAX_WATCHER_COUNT },
     (_, index) => `U${String(index).padStart(10, "0")}`,
   );
 
   assert.ok(
-    (prMergedButton(userIds)?.value ?? "").length <= 2000,
-    `${MAX_WATCHER_COUNT} watchers must still fit in a button value`,
+    (
+      prMergedButton(userIds, {
+        mergeNotifyMinutes: 60,
+        watcherNote: "ก".repeat(MAX_WATCHER_NOTE_LENGTH),
+      })?.value ?? ""
+    ).length <= 2000,
+    `${MAX_WATCHER_COUNT} watchers and a full note must fit in a button value`,
   );
 });
 
@@ -267,6 +312,13 @@ test("mentions every watcher in the merged thread reply", () => {
 
   assert.equal(body, "*Already merged* <@U_W1>, <@U_W2>");
   assert.match(text, /<@U_W1>, <@U_W2>/);
+});
+
+test("puts the watcher note under the mentions, escaped", () => {
+  const { blocks } = createPrMergedMessage(["U_W1"], "ดู <!here> ด้วย");
+  const body = (blocks[0] as { text: { text: string } }).text.text;
+
+  assert.equal(body, "*Already merged* <@U_W1>\nดู &lt;!here&gt; ด้วย");
 });
 
 test("decodes defensively around stray separators and spacing", () => {

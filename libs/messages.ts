@@ -66,7 +66,22 @@ export function getPrPriority(value: PrPriority) {
   );
 }
 
-export const MAX_WATCHER_COUNT = 100;
+export const MAX_WATCHER_COUNT = 10;
+export const MAX_WATCHER_NOTE_LENGTH = 300;
+
+export const MAX_MERGE_NOTIFY_MINUTES = 60;
+
+// Slack's number_input already enforces the 0–60 range client-side; this clamp is
+// the server-side backstop for a submission that reaches us some other way.
+export function parseMergeNotifyMinutes(value: string | undefined) {
+  const minutes = Math.trunc(Number(value));
+
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return 0;
+  }
+
+  return Math.min(minutes, MAX_MERGE_NOTIFY_MINUTES);
+}
 
 export function encodeActionValue(
   action: string,
@@ -88,6 +103,19 @@ export function decodeWatcherUserIds(value: string | undefined) {
       .map((userId) => userId.trim())
       .filter(Boolean) ?? []
   );
+}
+
+// The note rides last and is rejoined because decodeActionValue splits on ":" and a
+// typed note may contain one. Buttons posted before the note existed carry only the
+// watchers, so the missing fields fall back to "post now, no note".
+export function decodePrMergedAction(fields: string[]) {
+  const [watchers, minutes, ...note] = fields;
+
+  return {
+    watcherUserIds: decodeWatcherUserIds(watchers),
+    notifyAfterMinutes: parseMergeNotifyMinutes(minutes),
+    watcherNote: note.join(":") || undefined,
+  };
 }
 
 function escapeMrkdwn(value: string | undefined) {
@@ -205,8 +233,16 @@ function formatTicketLinks(links: string[]) {
 }
 
 export function createPrMessage(submission: PrSubmission) {
-  const { ticketLinks, prUrl, priority, reviewerUserIds, watcherUserIds, userId } =
-    submission;
+  const {
+    ticketLinks,
+    prUrl,
+    priority,
+    reviewerUserIds,
+    watcherUserIds,
+    mergeNotifyMinutes,
+    watcherNote,
+    userId,
+  } = submission;
   const level = getPrPriority(priority);
   const reviewers =
     reviewerUserIds.map((reviewerId) => `<@${reviewerId}>`).join(", ") || "-";
@@ -236,7 +272,12 @@ export function createPrMessage(submission: PrSubmission) {
             text: { type: "plain_text", text: "Merged" },
             // Watchers are deliberately absent from the text above and travel here
             // instead, so nobody is pinged until this is pressed.
-            value: encodeActionValue("merged", watcherUserIds.join(",")),
+            value: encodeActionValue(
+              "merged",
+              watcherUserIds.join(","),
+              String(mergeNotifyMinutes),
+              watcherNote,
+            ),
           },
           {
             type: "overflow",
@@ -327,17 +368,28 @@ export function createPrScheduleClosedUpdate(
   };
 }
 
-export function createPrMergedMessage(watcherUserIds: string[]) {
+export function createPrMergedMessage(
+  watcherUserIds: string[],
+  watcherNote?: string,
+) {
   const watchers = watcherUserIds
     .map((watcherId) => `<@${watcherId}>`)
     .join(", ");
+  const note = watcherNote ? escapeMrkdwn(watcherNote) : "";
 
   return {
-    text: `Merged · แจ้ง ${watchers}`,
+    text: ["Merged", watchers && `แจ้ง ${watchers}`, note]
+      .filter(Boolean)
+      .join(" · "),
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: `*Already merged* ${watchers}` },
+        text: {
+          type: "mrkdwn",
+          text: [`*Already merged* ${watchers}`.trim(), note]
+            .filter(Boolean)
+            .join("\n"),
+        },
       },
     ] satisfies SlackBlock[],
   };

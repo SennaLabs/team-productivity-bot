@@ -77,6 +77,10 @@ export async function openSlackModal(triggerId: string, view: SlackModal) {
   await callSlack("views.open", { trigger_id: triggerId, view });
 }
 
+export async function updateSlackModal(viewId: string, view: SlackModal) {
+  await callSlack("views.update", { view_id: viewId, view });
+}
+
 export async function postSlackMessage(
   channel: string,
   message: { text: string; blocks: SlackBlock[] },
@@ -95,10 +99,16 @@ export async function scheduleSlackMessage(
   channel: string,
   message: { text: string; blocks: SlackBlock[] },
   postAt: number,
+  threadTs?: string,
 ) {
   const result = await callSlack<
     SlackApiResponse & { scheduled_message_id?: string }
-  >("chat.scheduleMessage", { channel, post_at: postAt, ...message });
+  >("chat.scheduleMessage", {
+    channel,
+    post_at: postAt,
+    ...message,
+    thread_ts: threadTs,
+  });
 
   return result.scheduled_message_id;
 }

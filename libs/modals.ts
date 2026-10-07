@@ -3,7 +3,13 @@ import type {
   SlackModal,
   SlackModalMetadata,
 } from "@/models/slack-api";
-import { DEFAULT_PR_PRIORITY, PR_PRIORITIES } from "@/libs/messages";
+import {
+  DEFAULT_PR_PRIORITY,
+  MAX_MERGE_NOTIFY_MINUTES,
+  MAX_WATCHER_COUNT,
+  MAX_WATCHER_NOTE_LENGTH,
+  PR_PRIORITIES,
+} from "@/libs/messages";
 
 function priorityOption(priority: (typeof PR_PRIORITIES)[number]) {
   return {
@@ -163,7 +169,83 @@ const SEND_OPTIONS = [
   { value: "custom", text: "Custom" },
 ].map(({ value, text }) => ({ value, text: { type: "plain_text", text } }));
 
-export function createPrModal(metadata: SlackModalMetadata): SlackModal {
+const MORE_OPTIONS = {
+  value: "more",
+  text: { type: "plain_text", text: "ตั้งค่าเพิ่มเติม" },
+  description: {
+    type: "plain_text",
+    text: "แจ้ง Watcher หลัง merge, ข้อความ, เวลาส่ง",
+  },
+};
+
+const MORE_OPTION_BLOCKS = [
+  {
+    type: "input",
+    block_id: "merge_notify",
+    label: { type: "plain_text", text: "แจ้ง Watcher หลัง merge (นาที)" },
+    hint: {
+      type: "plain_text",
+      text: `0 = ทันที, สูงสุด ${MAX_MERGE_NOTIFY_MINUTES} นาที`,
+    },
+    element: {
+      type: "number_input",
+      action_id: "merge_notify_input",
+      is_decimal_allowed: false,
+      min_value: "0",
+      max_value: String(MAX_MERGE_NOTIFY_MINUTES),
+      initial_value: "0",
+    },
+  },
+  {
+    type: "input",
+    block_id: "watcher_note",
+    optional: true,
+    label: { type: "plain_text", text: "ข้อความถึง Watcher" },
+    element: {
+      type: "plain_text_input",
+      action_id: "watcher_note_input",
+      multiline: true,
+      max_length: MAX_WATCHER_NOTE_LENGTH,
+      placeholder: {
+        type: "plain_text",
+        text: "เช่น deploy staging แล้ว ทดสอบได้เลย",
+      },
+    },
+  },
+  {
+    type: "input",
+    block_id: "send_at",
+    label: { type: "plain_text", text: "Send" },
+    element: {
+      type: "radio_buttons",
+      action_id: "send_at_select",
+      initial_option: SEND_OPTIONS[0],
+      options: SEND_OPTIONS,
+    },
+  },
+  {
+    type: "input",
+    block_id: "send_custom",
+    optional: true,
+    label: { type: "plain_text", text: "Custom time" },
+    // Slack cannot show this only when Custom is picked without a views.update
+    // round-trip per click, so it always shows and is read only for Custom.
+    hint: { type: "plain_text", text: "ใช้เมื่อเลือก Custom" },
+    element: {
+      type: "datetimepicker",
+      action_id: "send_custom_input",
+    },
+  },
+];
+
+// Slack modals have no collapsible block, so the checkbox re-renders the view with
+// views.update. Slack keeps what was typed into blocks whose block_id survives the
+// update, but blocks that are hidden submit nothing, so a collapsed modal posts now
+// and tells watchers the moment the PR is merged, with no note.
+export function createPrModal(
+  metadata: SlackModalMetadata,
+  showMoreOptions = false,
+): SlackModal {
   return {
     type: "modal",
     callback_id: "pr_create",
@@ -235,11 +317,12 @@ export function createPrModal(metadata: SlackModalMetadata): SlackModal {
         label: { type: "plain_text", text: "Watcher" },
         hint: {
           type: "plain_text",
-          text: "ไม่ถูก mention ตอนโพสต์ จะ mention ใน thread ตอนกด Merged",
+          text: "ไม่ถูก mention ตอนโพสต์ จะ mention ใน thread หลังกด Merged",
         },
         element: {
           type: "multi_users_select",
           action_id: "watcher_select",
+          max_selected_items: MAX_WATCHER_COUNT,
           placeholder: {
             type: "plain_text",
             text: "เลือกคนที่ต้องการให้รู้ตอน merge",
@@ -247,29 +330,18 @@ export function createPrModal(metadata: SlackModalMetadata): SlackModal {
         },
       },
       {
-        type: "input",
-        block_id: "send_at",
-        label: { type: "plain_text", text: "Send" },
-        element: {
-          type: "radio_buttons",
-          action_id: "send_at_select",
-          initial_option: SEND_OPTIONS[0],
-          options: SEND_OPTIONS,
-        },
+        type: "actions",
+        block_id: "pr_options",
+        elements: [
+          {
+            type: "checkboxes",
+            action_id: "pr_options_toggle",
+            options: [MORE_OPTIONS],
+            ...(showMoreOptions ? { initial_options: [MORE_OPTIONS] } : {}),
+          },
+        ],
       },
-      {
-        type: "input",
-        block_id: "send_custom",
-        optional: true,
-        label: { type: "plain_text", text: "Custom time" },
-        // Slack cannot show this only when Custom is picked without a views.update
-        // round-trip per click, so it always shows and is read only for Custom.
-        hint: { type: "plain_text", text: "ใช้เมื่อเลือก Custom" },
-        element: {
-          type: "datetimepicker",
-          action_id: "send_custom_input",
-        },
-      },
+      ...(showMoreOptions ? MORE_OPTION_BLOCKS : []),
     ],
   };
 }
