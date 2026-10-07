@@ -18,7 +18,12 @@ The current Daily time range for one calendar date in a Slack Channel. A Slack C
 
 **Issue Submission**:
 A request for help created by one Slack member in a Slack Channel and directed to zero or more Asked Members.
-_Avoid_: Issue Log
+_Avoid_: Issue Log, Blocking issue (it reads like the Issue's own *Blocking* field)
+
+**Issue Thread**:
+Any Slack message that a member picks to collect Issue Submissions as thread replies instead of new channel messages. Members post it themselves, usually as a dated "📌 Blocking Issues" header, and it is not related to the Daily Submission.
+_Avoid_: Daily parent message
+_Added_: 2026-10-07
 
 **Issue Creator**:
 The Slack member who submits an Issue Submission.

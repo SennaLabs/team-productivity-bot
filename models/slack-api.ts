@@ -14,6 +14,7 @@ export type SlackModalMetadata = {
   channel: SlackChannelContext;
   requesterUserId: string | null;
   requesterUserName: string | null;
+  threadTs?: string;
 };
 
 export type SlackModal = Record<string, unknown>;
@@ -33,6 +34,8 @@ export type SlackInputValue = {
 
 export type SlackInteractionPayload = {
   type: string;
+  callback_id?: string;
+  trigger_id?: string;
   user?: {
     id?: string;
     name?: string;
