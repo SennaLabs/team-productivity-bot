@@ -14,15 +14,25 @@ Configuration that applies to one Slack Channel. The first setting is the Daily 
 The default start and end times shown when a member opens the Daily modal for a Slack Channel.
 
 **Daily Submission**:
-The current Daily time range for one calendar date in a Slack Channel. A Slack Channel has at most one Daily Submission per date; submitting again replaces that date's current values.
+The current Daily time range, plus an optional note, for one calendar date in a Slack Channel. A Slack Channel has at most one Daily Submission per date; submitting again replaces that date's current values.
 
 **Issue Submission**:
 A request for help created by one Slack member in a Slack Channel and directed to zero or more Asked Members.
-_Avoid_: Issue Log
+_Avoid_: Issue Log, Blocking issue (it reads like the Issue's own *Blocking* field)
+
+**Issue Thread**:
+Any Slack message that a member picks to collect Issue Submissions as thread replies instead of new channel messages. Members post it themselves, usually as a dated "📌 Blocking Issues" header, and it is not related to the Daily Submission.
+_Avoid_: Daily parent message
+_Added_: 2026-10-07
 
 **Issue Creator**:
-The Slack member who submits an Issue Submission.
+The Slack member, or the Company Member on the dashboard, who submits an Issue Submission.
 _Avoid_: Owner, submitter
+
+**Channel Member**:
+A person who was in a Slack Channel at its last member sync. Only Channel Members can be picked as Asked Members on the dashboard; in Slack, anyone in the workspace can be asked. Someone who has left the channel is no longer a Channel Member, but their name is kept so past Issue Submissions can still show it.
+_Avoid_: Project member, team member
+_Added_: 2026-10-07
 
 **Asked Member**:
 A Slack member whose help is requested in an Issue Submission.

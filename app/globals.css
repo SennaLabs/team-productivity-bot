@@ -153,6 +153,12 @@ body {
   }
 }
 
+.issue-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
 .daily-cell-actions {
   display: flex;
   width: 100%;

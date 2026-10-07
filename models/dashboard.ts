@@ -14,11 +14,27 @@ export type DailyRecord = {
   date: string;
   timezone: string;
   submittedAt: string | null;
+  note: string | null;
 };
 
 export type DashboardMember = {
   userId: string | null;
   userName: string | null;
+};
+
+export type ChannelMember = {
+  userId: string;
+  userName: string;
+  active: boolean;
+};
+
+export type NewIssueValues = {
+  problem: string;
+  blocking: string;
+  askUserIds: string[];
+  need: string;
+  minutes: number;
+  note?: string;
 };
 
 export type IssueRecord = {

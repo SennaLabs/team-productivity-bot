@@ -138,6 +138,21 @@ export function createDailyModal(
           placeholder: { type: "plain_text", text: "เช่น 09:34" },
         },
       },
+      {
+        type: "input",
+        block_id: "note",
+        optional: true,
+        label: { type: "plain_text", text: "Note" },
+        element: {
+          type: "plain_text_input",
+          action_id: "note_input",
+          multiline: true,
+          // The note shares one 300-character section block with the times in
+          // the channel post, so Slack's own 300 limit would let the post fail.
+          max_length: 300,
+          placeholder: { type: "plain_text", text: "ข้อมูลเพิ่ม" },
+        },
+      },
     ],
   };
 }

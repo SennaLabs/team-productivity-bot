@@ -14,6 +14,7 @@ export type SlackModalMetadata = {
   channel: SlackChannelContext;
   requesterUserId: string | null;
   requesterUserName: string | null;
+  threadTs?: string;
 };
 
 export type SlackModal = Record<string, unknown>;
@@ -33,6 +34,8 @@ export type SlackInputValue = {
 
 export type SlackInteractionPayload = {
   type: string;
+  callback_id?: string;
+  trigger_id?: string;
   user?: {
     id?: string;
     name?: string;
@@ -78,6 +81,7 @@ export type DailySubmission = {
   durationMinutes: number;
   date: string;
   timezone: string;
+  note?: string;
 };
 
 export type DailyTimeRange = {
@@ -107,16 +111,25 @@ export type SlackApiResponse = {
   provided?: string;
 };
 
-export type SlackUserInfoResponse = SlackApiResponse & {
-  user?: {
-    id?: string;
+export type SlackUser = {
+  id?: string;
+  real_name?: string;
+  name?: string;
+  deleted?: boolean;
+  is_bot?: boolean;
+  profile?: {
+    display_name?: string;
     real_name?: string;
-    name?: string;
-    profile?: {
-      display_name?: string;
-      real_name?: string;
-    };
   };
+};
+
+export type SlackUserInfoResponse = SlackApiResponse & {
+  user?: SlackUser;
+};
+
+export type SlackMembersPage<T> = SlackApiResponse & {
+  members?: T[];
+  response_metadata?: { next_cursor?: string };
 };
 
 export type PrSubmission = {

@@ -13,6 +13,7 @@ import {
   isMessageOwner,
   MAX_WATCHER_COUNT,
 } from "@/libs/messages";
+import { createIssueModal } from "@/libs/modals";
 import type {
   DailySubmission,
   IssueSubmission,
@@ -23,6 +24,7 @@ import {
   deleteScheduledSlackMessage,
   deleteSlackMessage,
   getSlackMember,
+  openSlackModal,
   postSlackEphemeral,
   postSlackMessage,
   scheduleSlackMessage,
@@ -41,6 +43,7 @@ import {
   getMinutesSinceMidnight,
   getRequesterUserId,
   getRequesterUserName,
+  getThreadTs,
   isValidSlackRequest,
   parsePrUrl,
   parseInteractionPayload,
@@ -73,7 +76,7 @@ async function publishDaily(submission: DailySubmission) {
   ]);
 }
 
-async function publishIssue(submission: IssueSubmission) {
+async function publishIssue(submission: IssueSubmission, threadTs?: string) {
   const channelId = submission.channel.channelId;
 
   if (!channelId) {
@@ -104,6 +107,7 @@ async function publishIssue(submission: IssueSubmission) {
     postSlackMessage(
       channelId,
       createIssueMessage(enrichedSubmission, issueId),
+      threadTs,
     ),
     saveIssueSubmission(enrichedSubmission, issueId),
   ]);
@@ -191,6 +195,7 @@ function handleDailySubmission(payload: SlackInteractionPayload) {
     durationMinutes:
       getMinutesSinceMidnight(endTime) - getMinutesSinceMidnight(startTime),
     ...calendarDate,
+    note: getInput(payload, "note", "note_input")?.value,
   };
 
   runAfterResponse(() => publishDaily(submission));
@@ -227,7 +232,39 @@ function handleIssueSubmission(payload: SlackInteractionPayload) {
     timezone,
   };
 
-  runAfterResponse(() => publishIssue(submission));
+  runAfterResponse(() => publishIssue(submission, getThreadTs(payload)));
+
+  return new Response(null, { status: 200 });
+}
+
+async function handleIssueShortcut(payload: SlackInteractionPayload) {
+  const triggerId = payload.trigger_id;
+  // Run on a reply, the shortcut still targets that reply's thread rather than
+  // starting a new thread under the reply.
+  const threadTs = payload.message?.thread_ts ?? payload.message?.ts;
+
+  if (!triggerId || !threadTs) {
+    return new Response(null, { status: 200 });
+  }
+
+  try {
+    await openSlackModal(
+      triggerId,
+      createIssueModal({
+        channel: {
+          channelId: payload.channel?.id ?? null,
+          channelName: payload.channel?.name ?? null,
+        },
+        requesterUserId: payload.user?.id ?? null,
+        requesterUserName: payload.user?.name ?? null,
+        threadTs,
+      }),
+    );
+  } catch (error) {
+    // Slack shows nothing from a message_action response body, so the 502 that
+    // /issue returns would be invisible here.
+    console.error("Issue shortcut modal failed to open", error);
+  }
 
   return new Response(null, { status: 200 });
 }
@@ -426,6 +463,13 @@ export async function handleSlackInteraction(request: Request) {
 
   if (payload.type === "block_actions") {
     return handleMessageAction(payload);
+  }
+
+  if (
+    payload.type === "message_action" &&
+    payload.callback_id === "add_blocking_issue"
+  ) {
+    return handleIssueShortcut(payload);
   }
 
   if (payload.type !== "view_submission") {

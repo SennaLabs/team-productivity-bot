@@ -18,6 +18,7 @@ function daily(date: string, durationMinutes: number): DailyRecord {
     date,
     timezone: "Asia/Bangkok",
     submittedAt: null,
+    note: null,
   };
 }
 

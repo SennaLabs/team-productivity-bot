@@ -4,6 +4,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getDatabase } from "@/libs/firebase/admin";
 import { createIssueRecordData } from "@/libs/repositories/channel-records";
 import type {
+  ChannelMember,
   ChannelSummary,
   DailyRecord,
   DashboardMember,
@@ -14,6 +15,7 @@ import type {
   DailyTimeRange,
   IssueSubmission,
   SlackChannelContext,
+  SlackMember,
 } from "@/models/slack-api";
 
 const CHANNELS_COLLECTION = "slackChannels";
@@ -118,6 +120,7 @@ export async function listDailySubmissions(
       date: toString(data.date, document.id),
       timezone: toString(data.timezone, "Asia/Bangkok"),
       submittedAt: toIsoString(data.submittedAt),
+      note: toNullableString(data.note),
     };
   });
 }
@@ -125,11 +128,28 @@ export async function listDailySubmissions(
 export async function listIssueSubmissions(
   channelId: string,
 ): Promise<IssueRecord[]> {
-  const snapshot = await getChannelDocument(channelId)
-    .collection("issueSubmissions")
-    .orderBy("createdAt", "desc")
-    .limit(DASHBOARD_PAGE_SIZE)
-    .get();
+  const [snapshot, members] = await Promise.all([
+    getChannelDocument(channelId)
+      .collection("issueSubmissions")
+      .orderBy("createdAt", "desc")
+      .limit(DASHBOARD_PAGE_SIZE)
+      .get(),
+    listChannelMembers(channelId),
+  ]);
+  const memberNames = new Map(
+    members.map((member) => [member.userId, member.userName]),
+  );
+  // Records saved while users.info was failing hold the Slack ID as the name, or
+  // no name at all, so the last member sync supplies it without rewriting the record.
+  const withName = (member: DashboardMember): DashboardMember =>
+    member.userName && member.userName !== member.userId
+      ? member
+      : {
+          ...member,
+          userName:
+            (member.userId ? memberNames.get(member.userId) : undefined) ??
+            member.userName,
+        };
 
   return snapshot.docs.map((document) => {
     const data = document.data();
@@ -148,13 +168,15 @@ export async function listIssueSubmissions(
 
     return {
       id: document.id,
-      createdBy: data.createdBy
-        ? toMember(data.createdBy)
-        : {
-            userId: toNullableString(data.userId),
-            userName: toNullableString(data.userName),
-          },
-      askedUsers,
+      createdBy: withName(
+        data.createdBy
+          ? toMember(data.createdBy)
+          : {
+              userId: toNullableString(data.userId),
+              userName: toNullableString(data.userName),
+            },
+      ),
+      askedUsers: askedUsers.map(withName),
       problem: toNullableString(data.problem),
       blocking: toNullableString(data.blocking),
       need: toNullableString(data.need),
@@ -165,6 +187,56 @@ export async function listIssueSubmissions(
       createdAt: toIsoString(data.createdAt),
     };
   });
+}
+
+export async function listChannelMembers(
+  channelId: string,
+): Promise<ChannelMember[]> {
+  const snapshot = await getChannelDocument(channelId)
+    .collection("members")
+    .orderBy("userName")
+    .get();
+
+  return snapshot.docs.map((document) => ({
+    userId: document.id,
+    userName: toString(document.get("userName"), document.id),
+    // Rows synced before the flag existed were all current members.
+    active: document.get("active") !== false,
+  }));
+}
+
+// People who left are flagged, not deleted, so old issues that only stored their
+// Slack ID can still show their name.
+// ponytail: one batch caps a sync at 500 writes (members plus new departures);
+// move to bulkWriter if a channel outgrows that.
+export async function saveChannelMembers(
+  channelId: string,
+  members: SlackMember[],
+) {
+  const collection = getChannelDocument(channelId).collection("members");
+  const existing = await collection.get();
+  const currentIds = new Set(members.map((member) => member.id));
+  const batch = getDatabase().batch();
+
+  for (const document of existing.docs) {
+    if (!currentIds.has(document.id) && document.get("active") !== false) {
+      batch.set(
+        document.ref,
+        { active: false, syncedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+    }
+  }
+
+  for (const member of members) {
+    batch.set(collection.doc(member.id), {
+      userName: member.name,
+      active: true,
+      syncedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
 }
 
 export async function getChannelDailyTimeRange(channelId: string) {
@@ -208,6 +280,8 @@ export async function saveDailySubmission(submission: DailySubmission) {
     durationMinutes: submission.durationMinutes,
     date: submission.date,
     timezone: submission.timezone,
+    // Written even when empty so a resubmission clears the date's previous note.
+    note: submission.note ?? null,
   };
 
   batch.set(channel, channelData(submission.channel), { merge: true });
@@ -223,12 +297,12 @@ export async function saveDailySubmission(submission: DailySubmission) {
   await batch.commit();
 }
 
-// Dashboard edits only touch the time fields so the Slack submitter stays on the
-// record; a date entered from the dashboard is attributed to the session user.
+// Dashboard edits only touch the time and note fields so the Slack submitter stays
+// on the record; a date entered from the dashboard is attributed to the session user.
 export async function saveDashboardDailyTime(
   channelId: string,
   date: string,
-  time: Pick<DailyRecord, "startTime" | "endTime" | "durationMinutes">,
+  time: Pick<DailyRecord, "startTime" | "endTime" | "durationMinutes" | "note">,
   editorName: string,
 ) {
   const record = getChannelDocument(channelId)

@@ -134,6 +134,18 @@ export function getRequesterUserName(payload: SlackInteractionPayload) {
   }
 }
 
+export function getThreadTs(payload: SlackInteractionPayload) {
+  try {
+    const metadata = JSON.parse(
+      payload.view?.private_metadata ?? "{}",
+    ) as Partial<SlackModalMetadata>;
+
+    return typeof metadata.threadTs === "string" ? metadata.threadTs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getMinutesSinceMidnight(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
 
