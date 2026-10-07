@@ -1,7 +1,9 @@
 import type {
+  ChannelMember,
   ChannelSummary,
   DailyRecord,
   IssueRecord,
+  NewIssueValues,
 } from "@/models/dashboard";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -76,4 +78,33 @@ export async function getIssueRecords(channelId: string) {
   );
 
   return result.issues;
+}
+
+export async function createIssueRecord(
+  channelId: string,
+  values: NewIssueValues,
+) {
+  await requestJson<void>(
+    `/api/channels/${encodeURIComponent(channelId)}/issues`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    },
+  );
+}
+
+export async function getChannelMembers(channelId: string) {
+  const result = await requestJson<{ members: ChannelMember[] }>(
+    `/api/channels/${encodeURIComponent(channelId)}/members`,
+  );
+
+  return result.members;
+}
+
+export async function syncChannelMembers(channelId: string) {
+  await requestJson<void>(
+    `/api/channels/${encodeURIComponent(channelId)}/members`,
+    { method: "POST" },
+  );
 }

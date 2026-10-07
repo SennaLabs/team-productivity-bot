@@ -22,6 +22,20 @@ export type DashboardMember = {
   userName: string | null;
 };
 
+export type ChannelMember = {
+  userId: string;
+  userName: string;
+};
+
+export type NewIssueValues = {
+  problem: string;
+  blocking: string;
+  askUserIds: string[];
+  need: string;
+  minutes: number;
+  note?: string;
+};
+
 export type IssueRecord = {
   id: string;
   createdBy: DashboardMember;

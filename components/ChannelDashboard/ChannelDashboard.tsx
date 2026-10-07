@@ -6,6 +6,7 @@ import { Alert, Card, Empty, Table, Tabs, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { DateTime } from "luxon";
 import { DailyCalendar } from "@/components/DailyCalendar";
+import { IssueCreateForm } from "@/components/IssueCreateForm";
 import type { DashboardMember, IssueRecord } from "@/models/dashboard";
 
 import type { ChannelDashboardProps } from "./interface";
@@ -149,15 +150,20 @@ export function ChannelDashboard({
                 children: issuesError ? (
                   <QueryError message={issuesError} />
                 ) : (
-                  <Table
-                    rowKey="id"
-                    columns={issueColumns}
-                    dataSource={issues}
-                    loading={issuesPending}
-                    pagination={{ pageSize: 20, showSizeChanger: false }}
-                    locale={{ emptyText: <Empty description="ยังไม่มี Issue" /> }}
-                    scroll={{ x: 1600 }}
-                  />
+                  <>
+                    <div className="issue-toolbar">
+                      <IssueCreateForm channelId={channelId} />
+                    </div>
+                    <Table
+                      rowKey="id"
+                      columns={issueColumns}
+                      dataSource={issues}
+                      loading={issuesPending}
+                      pagination={{ pageSize: 20, showSizeChanger: false }}
+                      locale={{ emptyText: <Empty description="ยังไม่มี Issue" /> }}
+                      scroll={{ x: 1600 }}
+                    />
+                  </>
                 ),
               },
             ]}

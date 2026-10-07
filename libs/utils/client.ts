@@ -2,19 +2,34 @@ import type {
   SlackApiResponse,
   SlackBlock,
   SlackMember,
+  SlackMembersPage,
   SlackModal,
+  SlackUser,
   SlackUserInfoResponse,
 } from "@/models/slack-api";
 
+// Plain fields, not constructor parameter properties, so `node --test` can load
+// this file with type stripping alone.
 class SlackApiError extends Error {
+  readonly method: string;
+  readonly slackError: string;
+  readonly needed?: string;
+  readonly provided?: string;
+
   constructor(
-    readonly method: string,
-    readonly slackError: string,
-    readonly needed?: string,
-    readonly provided?: string,
+    method: string,
+    slackError: string,
+    needed?: string,
+    provided?: string,
   ) {
-    super(`${method} failed: ${slackError}`);
+    super(
+      `${method} failed: ${slackError}${needed ? ` (needs ${needed})` : ""}`,
+    );
     this.name = "SlackApiError";
+    this.method = method;
+    this.slackError = slackError;
+    this.needed = needed;
+    this.provided = provided;
   }
 }
 
@@ -30,15 +45,19 @@ function getBotToken() {
 
 async function callSlack<T extends SlackApiResponse>(
   method: string,
-  body: Record<string, unknown>,
+  // Slack reads JSON bodies only on write methods. Read methods ignore them, which
+  // left users.info without its `user` argument and answering user_not_found, so
+  // read methods take URLSearchParams, the form encoding every method accepts.
+  body: Record<string, unknown> | URLSearchParams,
 ) {
+  const isForm = body instanceof URLSearchParams;
   const response = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getBotToken()}`,
-      "Content-Type": "application/json; charset=utf-8",
+      ...(isForm ? {} : { "Content-Type": "application/json; charset=utf-8" }),
     },
-    body: JSON.stringify(body),
+    body: isForm ? body : JSON.stringify(body),
   });
   const result = (await response.json()) as T;
 
@@ -129,6 +148,57 @@ export async function postSlackEphemeral(
   await callSlack("chat.postEphemeral", { channel, user, text });
 }
 
+function slackUserName(user: SlackUser | undefined) {
+  return (
+    user?.profile?.display_name ||
+    user?.profile?.real_name ||
+    user?.real_name ||
+    user?.name
+  );
+}
+
+async function listSlackPages<T>(method: string, params: Record<string, string>) {
+  const items: T[] = [];
+  let cursor = "";
+
+  do {
+    const query = new URLSearchParams(params);
+
+    if (cursor) {
+      query.set("cursor", cursor);
+    }
+
+    const page = await callSlack<SlackMembersPage<T>>(method, query);
+    items.push(...(page.members ?? []));
+    cursor = page.response_metadata?.next_cursor ?? "";
+  } while (cursor);
+
+  return items;
+}
+
+export async function listSlackChannelMembers(
+  channelId: string,
+): Promise<SlackMember[]> {
+  // ponytail: users.list walks the whole workspace on every sync; switch to
+  // users.info per channel member if a big workspace hits its rate limit.
+  const [memberIds, users] = await Promise.all([
+    listSlackPages<string>("conversations.members", {
+      channel: channelId,
+      limit: "1000",
+    }),
+    listSlackPages<SlackUser>("users.list", { limit: "200" }),
+  ]);
+  const inChannel = new Set(memberIds);
+
+  return users.flatMap((user) => {
+    const name = slackUserName(user);
+
+    return user.id && inChannel.has(user.id) && !user.deleted && !user.is_bot && name
+      ? [{ id: user.id, name }]
+      : [];
+  });
+}
+
 export async function getSlackMember(
   userId: string | undefined,
   source: string,
@@ -138,14 +208,11 @@ export async function getSlackMember(
   }
 
   try {
-    const result = await callSlack<SlackUserInfoResponse>("users.info", {
-      user: userId,
-    });
-    const name =
-      result.user?.profile?.display_name ||
-      result.user?.profile?.real_name ||
-      result.user?.real_name ||
-      result.user?.name;
+    const result = await callSlack<SlackUserInfoResponse>(
+      "users.info",
+      new URLSearchParams({ user: userId }),
+    );
+    const name = slackUserName(result.user);
 
     if (!name) {
       return null;

@@ -111,16 +111,25 @@ export type SlackApiResponse = {
   provided?: string;
 };
 
-export type SlackUserInfoResponse = SlackApiResponse & {
-  user?: {
-    id?: string;
+export type SlackUser = {
+  id?: string;
+  real_name?: string;
+  name?: string;
+  deleted?: boolean;
+  is_bot?: boolean;
+  profile?: {
+    display_name?: string;
     real_name?: string;
-    name?: string;
-    profile?: {
-      display_name?: string;
-      real_name?: string;
-    };
   };
+};
+
+export type SlackUserInfoResponse = SlackApiResponse & {
+  user?: SlackUser;
+};
+
+export type SlackMembersPage<T> = SlackApiResponse & {
+  members?: T[];
+  response_metadata?: { next_cursor?: string };
 };
 
 export type PrSubmission = {

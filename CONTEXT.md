@@ -26,8 +26,13 @@ _Avoid_: Daily parent message
 _Added_: 2026-10-07
 
 **Issue Creator**:
-The Slack member who submits an Issue Submission.
+The Slack member, or the Company Member on the dashboard, who submits an Issue Submission.
 _Avoid_: Owner, submitter
+
+**Channel Member**:
+A person who was in a Slack Channel at its last member sync. Only Channel Members can be picked as Asked Members on the dashboard; in Slack, anyone in the workspace can be asked.
+_Avoid_: Project member, team member
+_Added_: 2026-10-07
 
 **Asked Member**:
 A Slack member whose help is requested in an Issue Submission.
