@@ -5,7 +5,7 @@ import type {
 } from "@/models/resource-request";
 import type { SlackBlock } from "@/models/slack-api";
 import { decodeActionValue, encodeActionValue } from "../messages.ts";
-import { CANCELLABLE_STATUSES, OPEN_STATUSES } from "./requests.ts";
+import { CANCELLABLE_STATUSES, formatAmount, OPEN_STATUSES } from "./requests.ts";
 
 // Every Slack ID this feature owns starts with this prefix, which is how
 // libs/utils/interactions.ts knows to hand a payload over.
@@ -64,7 +64,7 @@ export function formatDateRange(request: Pick<ResourceRequest, "startDate" | "en
 
 // One line used in DMs, modals and the card's notification text.
 export function summarizeRequest(request: ResourceRequest) {
-  return `${request.requestId} · ยืม ${mention(request.personId)} ไป ${escapeMrkdwn(request.project)} · ${request.mandays} manday (${formatDateRange(request)})`;
+  return `${request.requestId} · ยืม ${mention(request.personId)} ไป ${escapeMrkdwn(request.project)} · ${formatAmount(request.mandays)} (${formatDateRange(request)})`;
 }
 
 export type ManageChoice = "edit" | "cancel";
@@ -93,7 +93,7 @@ export function createResourceRequestCard(request: ResourceRequest) {
         text: `${mention(request.requesterId)} ขอยืม ${mention(request.personId)} จาก ${mention(request.ownerPmId)} ไปช่วย *${escapeMrkdwn(request.project)}*`,
       },
       fields: [
-        { type: "mrkdwn", text: `*จำนวน*\n${request.mandays} manday` },
+        { type: "mrkdwn", text: `*จำนวน*\n${formatAmount(request.mandays)}` },
         { type: "mrkdwn", text: `*ช่วงวันที่*\n${formatDateRange(request)}` },
         {
           type: "mrkdwn",
@@ -211,7 +211,7 @@ export function createBorrowedMessage(people: BorrowedPerson[], title: string) {
       .slice(0, MAX_LINES_PER_PERSON)
       .map(
         (request) =>
-          `• ${escapeMrkdwn(request.project)} · ${request.mandays} manday · ${formatDateRange(request)} · จาก ${mention(request.ownerPmId)} ให้ ${mention(request.requesterId)}`,
+          `• ${escapeMrkdwn(request.project)} · ${formatAmount(request.mandays)} · ${formatDateRange(request)} · จาก ${mention(request.ownerPmId)} ให้ ${mention(request.requesterId)}`,
       );
 
     if (person.requests.length > MAX_LINES_PER_PERSON) {
@@ -222,12 +222,12 @@ export function createBorrowedMessage(people: BorrowedPerson[], title: string) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${mention(person.personId)} · รวม *${person.totalMandays} manday*\n${lines.join("\n")}`,
+        text: `${mention(person.personId)} · รวม *${formatAmount(person.totalMandays)}*\n${lines.join("\n")}`,
       },
     });
   }
 
-  const footer = ["นับ manday เต็มของแต่ละคำขอ แม้คำขอนั้นจะคาบเกี่ยวช่วงนี้แค่บางส่วน"];
+  const footer = ["นับจำนวนเต็มของแต่ละคำขอ แม้คำขอนั้นจะคาบเกี่ยวช่วงนี้แค่บางส่วน"];
 
   if (people.length > MAX_BORROWED_PEOPLE) {
     footer.unshift(`แสดง ${MAX_BORROWED_PEOPLE} จาก ${people.length} คน`);
@@ -247,7 +247,7 @@ export function describeChanges(before: ResourceRequest, after: ResourceRequest)
     ["personId", "คนที่ยืม", (request) => mention(request.personId)],
     ["ownerPmId", "PM", (request) => mention(request.ownerPmId)],
     ["project", "โปรเจกต์", (request) => escapeMrkdwn(request.project)],
-    ["mandays", "manday", (request) => String(request.mandays)],
+    ["mandays", "จำนวน", (request) => formatAmount(request.mandays)],
     ["startDate", "วันเริ่ม", (request) => request.startDate],
     ["endDate", "วันสิ้นสุด", (request) => request.endDate],
     ["urgency", "ความเร่งด่วน", (request) => request.urgency],
@@ -277,7 +277,7 @@ export const notices = {
   approvedToRequester: (request: ResourceRequest, actorId: string) =>
     `:white_check_mark: ${mention(actorId)} อนุมัติคำขอ *${summarizeRequest(request)}*${note(request)}`,
   approvedToPerson: (request: ResourceRequest, actorId: string) =>
-    `:wave: ${mention(actorId)} อนุมัติให้ ${mention(request.requesterId)} ยืมตัวคุณไปช่วย *${escapeMrkdwn(request.project)}* ${request.mandays} manday (${formatDateRange(request)})\nรายละเอียด: ${escapeMrkdwn(request.reason)}${note(request)}`,
+    `:wave: ${mention(actorId)} อนุมัติให้ ${mention(request.requesterId)} ยืมตัวคุณไปช่วย *${escapeMrkdwn(request.project)}* ${formatAmount(request.mandays)} (${formatDateRange(request)})\nรายละเอียด: ${escapeMrkdwn(request.reason)}${note(request)}`,
   rejected: (request: ResourceRequest, actorId: string) =>
     `:x: คำขอ *${summarizeRequest(request)}* ไม่ได้รับอนุมัติโดย ${mention(actorId)}${note(request)}`,
   // Asked in the card's thread so the discussion stays next to the request; the

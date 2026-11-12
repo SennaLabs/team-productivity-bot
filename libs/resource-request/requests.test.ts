@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   cancelResourceRequest,
+  formatAmount,
   decideResourceRequest,
   editResourceRequest,
   findOverlaps,
@@ -11,6 +12,7 @@ import {
   newResourceRequestId,
   rangesOverlap,
   summarizeBorrowed,
+  toAmountInput,
   validateResourceRequestForm,
   workingDays,
   type ResourceRequestForm,
@@ -31,7 +33,8 @@ const FORM: ResourceRequestForm = {
   person: EARTH,
   owner_pm: RIN,
   project: "Acme App",
-  mandays: "2",
+  amount: "2",
+  unit: "mandays",
   start_date: "2026-12-01", // Tue
   end_date: "2026-12-04", // Fri
   urgency: "Urgent",
@@ -57,7 +60,7 @@ function request(
 }
 
 test("accepts a complete form and trims text", () => {
-  const result = validateResourceRequestForm({ ...FORM, project: "  Acme  ", mandays: "1.5" });
+  const result = validateResourceRequestForm({ ...FORM, project: "  Acme  ", amount: "1.5" });
 
   assert.deepEqual(result, {
     ok: true,
@@ -80,15 +83,40 @@ test("reports every missing field by block_id", () => {
   assert.equal(result.ok, false);
   assert.deepEqual(
     Object.keys(result.ok ? {} : result.errors).sort(),
-    ["end_date", "mandays", "owner_pm", "person", "project", "reason", "start_date", "urgency"],
+    ["amount", "end_date", "owner_pm", "person", "project", "reason", "start_date", "unit", "urgency"],
   );
 });
 
-test("takes mandays in half days only", () => {
-  for (const [mandays, ok] of [["0.5", true], ["0.3", false], ["0", false], ["abc", false], ["101", false]] as const) {
-    const result = validateResourceRequestForm({ ...FORM, mandays, end_date: "2027-06-30" });
-    assert.equal(result.ok, ok, mandays);
+test("takes amounts in 15-minute steps in any unit", () => {
+  for (const [amount, unit, mandays] of [
+    ["15", "minutes", 1 / 32],
+    ["30", "minutes", 1 / 16],
+    ["1.25", "hours", 1.25 / 8],
+    ["1.5", "hours", 1.5 / 8],
+    ["0.5", "mandays", 0.5],
+    ["100", "mandays", 100],
+    ["10", "minutes", null],
+    ["1.1", "hours", null],
+    ["0.3", "mandays", null],
+    ["0", "minutes", null],
+    ["abc", "hours", null],
+    ["101", "mandays", null],
+    ["1", "weeks", null],
+  ] as const) {
+    const result = validateResourceRequestForm({ ...FORM, amount, unit, end_date: "2027-06-30" });
+    assert.equal(result.ok ? result.input.mandays : null, mandays, `${amount} ${unit}`);
   }
+});
+
+test("shows an amount in the unit that reads naturally", () => {
+  assert.deepEqual(
+    [1 / 32, 1 / 16, 1.5 / 8, 8.5 / 8, 0.5, 2, 0].map(formatAmount),
+    ["15 นาที", "30 นาที", "1 ชม. 30 นาที", "8 ชม. 30 นาที", "0.5 manday", "2 manday", "0 manday"],
+  );
+  assert.deepEqual(
+    [1 / 16, 1.25 / 8, 1.5].map(toAmountInput),
+    [{ amount: "30", unit: "minutes" }, { amount: "1.25", unit: "hours" }, { amount: "1.5", unit: "mandays" }],
+  );
 });
 
 test("refuses an end date before the start date", () => {
@@ -99,10 +127,10 @@ test("refuses an end date before the start date", () => {
 
 test("refuses more mandays than working days in the range", () => {
   // Fri 4 Dec to Mon 7 Dec is two working days.
-  const result = validateResourceRequestForm({ ...FORM, mandays: "3", start_date: "2026-12-04", end_date: "2026-12-07" });
+  const result = validateResourceRequestForm({ ...FORM, amount: "3", start_date: "2026-12-04", end_date: "2026-12-07" });
 
   assert.deepEqual(result.ok ? null : result.errors, {
-    mandays: "ช่วงวันที่เลือกมีวันทำงาน 2 วัน แต่ขอ 3 manday",
+    amount: "ช่วงวันที่เลือกมีวันทำงาน 2 วัน แต่ขอ 3 manday",
   });
   assert.equal(workingDays("2026-12-05", "2026-12-06"), 0);
 });

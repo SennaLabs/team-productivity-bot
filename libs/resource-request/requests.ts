@@ -34,6 +34,52 @@ export const CANCELLABLE_STATUSES: readonly ResourceRequestStatus[] = [
 ];
 
 export const MAX_MANDAYS = 100;
+// Requests are stored in mandays, but asked for in 15-minute steps. 15 minutes is
+// 1/32 of a manday, which a float holds exactly, so sums never drift.
+export const MINUTES_PER_MANDAY = 8 * 60;
+const MINUTE_STEP = 15;
+
+export const AMOUNT_UNITS = ["minutes", "hours", "mandays"] as const;
+export type AmountUnit = (typeof AMOUNT_UNITS)[number];
+
+const UNIT_MINUTES: Record<AmountUnit, number> = {
+  minutes: 1,
+  hours: 60,
+  mandays: MINUTES_PER_MANDAY,
+};
+
+export const UNIT_LABELS: Record<AmountUnit, string> = {
+  minutes: "นาที",
+  hours: "ชั่วโมง",
+  mandays: "manday",
+};
+
+// Whole and half days read as mandays; anything finer reads as hours and minutes.
+export function formatAmount(mandays: number) {
+  const minutes = Math.round(mandays * MINUTES_PER_MANDAY);
+
+  if (minutes % (MINUTES_PER_MANDAY / 2) === 0) {
+    return `${minutes / MINUTES_PER_MANDAY} manday`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  return [hours ? `${hours} ชม.` : "", rest ? `${rest} นาที` : ""].filter(Boolean).join(" ");
+}
+
+// How the edit form shows a stored amount: the largest unit that keeps it short.
+export function toAmountInput(mandays: number): { amount: string; unit: AmountUnit } {
+  const minutes = Math.round(mandays * MINUTES_PER_MANDAY);
+
+  if (minutes % (MINUTES_PER_MANDAY / 2) === 0) {
+    return { amount: String(minutes / MINUTES_PER_MANDAY), unit: "mandays" };
+  }
+
+  return minutes < 60
+    ? { amount: String(minutes), unit: "minutes" }
+    : { amount: String(minutes / 60), unit: "hours" };
+}
 export const MAX_PROJECT_LENGTH = 200;
 export const MAX_REASON_LENGTH = 2000;
 
@@ -64,7 +110,8 @@ export type ResourceRequestForm = Partial<
     | "person"
     | "owner_pm"
     | "project"
-    | "mandays"
+    | "amount"
+    | "unit"
     | "start_date"
     | "end_date"
     | "urgency"
@@ -81,8 +128,10 @@ export function validateResourceRequestForm(
   const errors: Record<string, string> = {};
   const project = form.project?.trim() ?? "";
   const reason = form.reason?.trim() ?? "";
-  const rawMandays = form.mandays?.trim() ?? "";
-  const mandays = Number(rawMandays);
+  const rawAmount = form.amount?.trim() ?? "";
+  const amount = Number(rawAmount);
+  const unit = AMOUNT_UNITS.find((value) => value === form.unit);
+  let minutes = 0;
   const startDate = form.start_date ?? "";
   const endDate = form.end_date ?? "";
   const urgency = URGENCIES.find((value) => value === form.urgency);
@@ -101,14 +150,24 @@ export function validateResourceRequestForm(
     errors.project = `ยาวได้ไม่เกิน ${MAX_PROJECT_LENGTH} ตัวอักษร`;
   }
 
-  if (!rawMandays || !Number.isFinite(mandays)) {
-    errors.mandays = "กรุณาใส่จำนวน manday";
-  } else if (mandays <= 0) {
-    errors.mandays = "manday ต้องมากกว่า 0";
-  } else if (mandays > MAX_MANDAYS) {
-    errors.mandays = "manday มากเกินไป";
-  } else if (!Number.isInteger(mandays * 2)) {
-    errors.mandays = "ใส่ทีละครึ่งวัน เช่น 0.5, 1, 1.5";
+  if (!unit) {
+    errors.unit = "กรุณาเลือกหน่วย";
+  }
+
+  if (!rawAmount || !Number.isFinite(amount)) {
+    errors.amount = "กรุณาใส่จำนวน";
+  } else if (amount <= 0) {
+    errors.amount = "จำนวนต้องมากกว่า 0";
+  } else if (unit) {
+    const exact = amount * UNIT_MINUTES[unit];
+    minutes = Math.round(exact);
+
+    // The tolerance absorbs float noise such as 1.1 * 60.
+    if (Math.abs(exact - minutes) > 1e-6 || minutes % MINUTE_STEP !== 0) {
+      errors.amount = "ใส่ทีละ 15 นาที เช่น 15 นาที, 1.5 ชั่วโมง, 0.5 manday";
+    } else if (minutes > MAX_MANDAYS * MINUTES_PER_MANDAY) {
+      errors.amount = `ขอได้ไม่เกิน ${MAX_MANDAYS} manday`;
+    }
   }
 
   if (!ISO_DATE.test(startDate)) {
@@ -121,11 +180,13 @@ export function validateResourceRequestForm(
     errors.end_date = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
   }
 
-  if (!errors.mandays && !errors.start_date && !errors.end_date) {
+  const mandays = minutes / MINUTES_PER_MANDAY;
+
+  if (minutes && !errors.amount && !errors.start_date && !errors.end_date) {
     const days = workingDays(startDate, endDate);
 
-    if (mandays > days) {
-      errors.mandays = `ช่วงวันที่เลือกมีวันทำงาน ${days} วัน แต่ขอ ${mandays} manday`;
+    if (minutes > days * MINUTES_PER_MANDAY) {
+      errors.amount = `ช่วงวันที่เลือกมีวันทำงาน ${days} วัน แต่ขอ ${formatAmount(mandays)}`;
     }
   }
 

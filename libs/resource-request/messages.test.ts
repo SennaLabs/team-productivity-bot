@@ -111,6 +111,7 @@ test("the edit form is prefilled and tied to the request", () => {
     `"initial_user":"${EARTH}"`,
     `"initial_user":"${RIN}"`,
     '"initial_value":"1.5"',
+    '"initial_option":{"text":{"type":"plain_text","text":"manday","emoji":true},"value":"mandays"}',
     '"initial_date":"2026-12-01"',
     '"initial_value":"Fix login"',
     // A project removed from the list since is kept.
@@ -128,7 +129,8 @@ test("reads the submitted form back from Slack's view state", () => {
         values: {
           person: { value: { selected_user: EARTH } },
           project: { value: { selected_option: { value: "Acme App" } } },
-          mandays: { value: { value: "1.5" } },
+          amount: { value: { value: "1.5" } },
+          unit: { value: { selected_option: { value: "hours" } } },
           start_date: { value: { selected_date: "2026-12-01" } },
         },
       },
@@ -139,7 +141,8 @@ test("reads the submitted form back from Slack's view state", () => {
     person: EARTH,
     owner_pm: undefined,
     project: "Acme App",
-    mandays: "1.5",
+    amount: "1.5",
+    unit: "hours",
     start_date: "2026-12-01",
     end_date: undefined,
     urgency: undefined,
@@ -151,7 +154,7 @@ test("describes what an edit changed", () => {
   const before = request();
   const after = { ...before, mandays: 3, ownerPmId: "U_NEW", reason: "changed" };
 
-  assert.deepEqual(describeChanges(before, after), ["PM: <@U_RIN> → <@U_NEW>", "manday: 2 → 3", "แก้รายละเอียดงาน"]);
+  assert.deepEqual(describeChanges(before, after), ["PM: <@U_RIN> → <@U_NEW>", "จำนวน: 2 manday → 3 manday", "แก้รายละเอียดงาน"]);
   assert.deepEqual(describeChanges(before, before), []);
 });
 
