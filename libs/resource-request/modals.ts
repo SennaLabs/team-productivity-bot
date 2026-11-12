@@ -14,9 +14,12 @@ import {
   summarizeRequest,
 } from "./messages.ts";
 import {
-  MAX_MANDAYS,
+  AMOUNT_UNITS,
+  formatAmount,
   MAX_PROJECT_LENGTH,
   MAX_REASON_LENGTH,
+  toAmountInput,
+  UNIT_LABELS,
   URGENCIES,
   type ResourceRequestForm,
 } from "./requests.ts";
@@ -29,8 +32,14 @@ function plain(text: string) {
   return { type: "plain_text", text, emoji: true };
 }
 
-function staticSelect(blockId: string, label: string, values: readonly string[], initial?: string) {
-  const options = values.map((value) => ({ text: plain(value), value }));
+function staticSelect(
+  blockId: string,
+  label: string,
+  values: readonly string[],
+  initial?: string,
+  labelOf: (value: string) => string = (value) => value,
+) {
+  const options = values.map((value) => ({ text: plain(labelOf(value)), value }));
   const initialOption = options.find((option) => option.value === initial);
 
   return {
@@ -102,6 +111,8 @@ export function createResourceRequestModal(
   projects: readonly string[],
   existing?: ResourceRequest,
 ): SlackModal {
+  const initialAmount = existing ? toAmountInput(existing.mandays) : undefined;
+
   return {
     type: "modal",
     callback_id: existing ? RESOURCE_REQUEST_IDS.editModal : RESOURCE_REQUEST_IDS.createModal,
@@ -115,18 +126,23 @@ export function createResourceRequestModal(
       projectInput(projects, existing?.project),
       {
         type: "input",
-        block_id: "mandays",
-        label: plain("จำนวน manday"),
-        hint: plain("ใส่ทีละครึ่งวันได้ เช่น 0.5, 1, 2.5"),
+        block_id: "amount",
+        label: plain("จำนวน"),
+        hint: plain("ทีละ 15 นาที เช่น 30 นาที, 1.5 ชั่วโมง, 2 manday (1 manday = 8 ชั่วโมง)"),
         element: {
           type: "number_input",
           action_id: INPUT,
           is_decimal_allowed: true,
-          min_value: "0.5",
-          max_value: String(MAX_MANDAYS),
-          ...(existing ? { initial_value: String(existing.mandays) } : {}),
+          ...(initialAmount ? { initial_value: initialAmount.amount } : {}),
         },
       },
+      staticSelect(
+        "unit",
+        "หน่วย",
+        AMOUNT_UNITS,
+        initialAmount?.unit ?? "mandays",
+        (unit) => UNIT_LABELS[unit as keyof typeof UNIT_LABELS],
+      ),
       datePicker("start_date", "ช่วงวันที่ เริ่ม", existing?.startDate),
       datePicker("end_date", "ช่วงวันที่ สิ้นสุด", existing?.endDate),
       staticSelect("urgency", "ความเร่งด่วน", URGENCIES, existing?.urgency ?? "Normal"),
@@ -164,7 +180,8 @@ export function readResourceRequestForm(payload: SlackInteractionPayload): Resou
     person: readInput(payload, "person"),
     owner_pm: readInput(payload, "owner_pm"),
     project: readInput(payload, "project"),
-    mandays: readInput(payload, "mandays"),
+    amount: readInput(payload, "amount"),
+    unit: readInput(payload, "unit"),
     start_date: readInput(payload, "start_date"),
     end_date: readInput(payload, "end_date"),
     urgency: readInput(payload, "urgency"),
@@ -215,7 +232,7 @@ function decisionModal(
 }
 
 function overlapLine(request: ResourceRequest) {
-  return `• ${escapeMrkdwn(request.project)} · ${request.mandays} manday · ${formatDateRange(request)} · ขอโดย <@${request.requesterId}> · ${request.requestId}`;
+  return `• ${escapeMrkdwn(request.project)} · ${formatAmount(request.mandays)} · ${formatDateRange(request)} · ขอโดย <@${request.requesterId}> · ${request.requestId}`;
 }
 
 // Warns the PM when the same person is already lent out, or asked for, over the same dates.
@@ -232,7 +249,7 @@ export function createOverlapBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `:warning: *<@${request.personId}> ถูกยืมไปแล้ว ${total} manday ในช่วงที่ทับกัน*\n${overlaps.approved.map(overlapLine).join("\n")}`,
+        text: `:warning: *<@${request.personId}> ถูกยืมไปแล้ว ${formatAmount(total)} ในช่วงที่ทับกัน*\n${overlaps.approved.map(overlapLine).join("\n")}`,
       },
     });
   }

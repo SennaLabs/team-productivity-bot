@@ -23,4 +23,5 @@ Requests are kept in the top-level `resourceRequests` collection, one document p
 - New Slack IDs elsewhere in this app must not start with `resource_request_`.
 - Buttons and the "⋯" menu read the request before showing their modal, so they open a loading modal first and replace it once the read finishes; the trigger_id would otherwise expire on a cold start.
 - Mandays may not exceed the Mon–Fri working days in the range. Public holidays are not known.
+- Amounts are entered in minutes, hours or mandays in 15-minute steps, but stored as mandays (1 manday = 8 hours). 15 minutes is 1/32 of a manday, which a float holds exactly, so totals in `/borrowed` add up without rounding.
 - `/borrowed` filters on `endDate` only, which needs no composite index.
