@@ -12,11 +12,15 @@ export type ResourceRequestInput = {
   personId: string;
   ownerPmId: string;
   project: string;
-  // Whole or half days, never more than the working days between the dates.
+  // In 15-minute steps (1 manday = 8 hours), never more than the working time
+  // between the dates.
   mandays: number;
   // YYYY-MM-DD, inclusive.
   startDate: string;
   endDate: string;
+  // HH:MM, the same window on every day of the range; both null means any time.
+  startTime: string | null;
+  endTime: string | null;
   urgency: ResourceRequestUrgency;
   reason: string;
 };

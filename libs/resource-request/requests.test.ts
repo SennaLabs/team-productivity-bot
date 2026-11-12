@@ -12,6 +12,7 @@ import {
   newResourceRequestId,
   rangesOverlap,
   summarizeBorrowed,
+  timesOverlap,
   toAmountInput,
   validateResourceRequestForm,
   workingDays,
@@ -71,6 +72,8 @@ test("accepts a complete form and trims text", () => {
       mandays: 1.5,
       startDate: "2026-12-01",
       endDate: "2026-12-04",
+      startTime: null,
+      endTime: null,
       urgency: "Urgent",
       reason: "Demo",
     },
@@ -224,6 +227,50 @@ test("a rejected or cancelled request cannot be cancelled or approved", () => {
     assert.equal(cancelResourceRequest(closed, SALES, "", ADMINS, NOW).result.ok, false);
     assert.equal(decideResourceRequest(closed, RIN, { type: "approve", note: "" }, ADMINS, NOW).result.ok, false);
   }
+});
+
+test("takes an optional time window that applies to every day", () => {
+  const oneDay = { ...FORM, start_date: "2027-07-02", end_date: "2027-07-02" }; // a Friday
+  const ok = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", start_time: "13:00", end_time: "14:00" });
+
+  assert.ok(ok.ok);
+  assert.deepEqual([ok.input.startTime, ok.input.endTime, ok.input.mandays], ["13:00", "14:00", 1 / 8]);
+
+  for (const [start_time, end_time, field] of [
+    ["13:00", undefined, "end_time"],
+    [undefined, "14:00", "start_time"],
+    ["14:00", "13:00", "end_time"],
+    ["13:00", "13:00", "end_time"],
+    ["25:00", "26:00", "start_time"],
+  ]) {
+    const result = validateResourceRequestForm({ ...oneDay, amount: "30", unit: "minutes", start_time, end_time });
+    assert.deepEqual(result.ok ? [] : Object.keys(result.errors), [field], `${start_time}–${end_time}`);
+  }
+});
+
+test("caps the amount at the window on each working day", () => {
+  // Tue 1 Dec to Fri 4 Dec is four working days of one hour each.
+  const window = { ...FORM, start_time: "13:00", end_time: "14:00" };
+
+  assert.ok(validateResourceRequestForm({ ...window, amount: "4", unit: "hours" }).ok);
+  assert.deepEqual(validateResourceRequestForm({ ...window, amount: "4.25", unit: "hours" }), {
+    ok: false,
+    errors: { amount: "ช่วงที่เลือกมีวันทำงาน 4 วัน วันละ 13:00–14:00 รวม 4 ชม. แต่ขอ 4 ชม. 15 นาที" },
+  });
+  // A window longer than eight hours still counts as one manday a day.
+  assert.equal(validateResourceRequestForm({ ...FORM, amount: "4.25", start_time: "08:00", end_time: "18:00" }).ok, false);
+});
+
+test("compares daily time windows; no window meets any window", () => {
+  const window = (startTime: string | null, endTime: string | null) => ({ startTime, endTime });
+
+  assert.equal(timesOverlap(window("13:00", "14:00"), window("13:30", "15:00")), true);
+  assert.equal(timesOverlap(window("13:00", "14:00"), window("14:00", "15:00")), false);
+  assert.equal(timesOverlap(window(null, null), window("09:00", "10:00")), true);
+
+  const morning = request({ startTime: "09:00", endTime: "10:00", status: "Approved" });
+  const afternoon = request({ startTime: "13:00", endTime: "14:00" });
+  assert.deepEqual(findOverlaps(afternoon, [morning]).approved, []);
 });
 
 test("compares inclusive date ranges", () => {

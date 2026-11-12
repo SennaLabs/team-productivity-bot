@@ -55,11 +55,23 @@ export function statusLabel(status: ResourceRequestStatus) {
   return STATUS_LABELS[status];
 }
 
-// A single date when the range is one day.
-export function formatDateRange(request: Pick<ResourceRequest, "startDate" | "endDate">) {
-  return request.startDate === request.endDate
-    ? request.startDate
-    : `${request.startDate} → ${request.endDate}`;
+function formatTimeWindow(request: Pick<ResourceRequest, "startTime" | "endTime">) {
+  return request.startTime && request.endTime ? `${request.startTime}–${request.endTime}` : null;
+}
+
+// A single date when the range is one day, then the daily window if there is one.
+export function formatDateRange(
+  request: Pick<ResourceRequest, "startDate" | "endDate" | "startTime" | "endTime">,
+) {
+  const singleDay = request.startDate === request.endDate;
+  const dates = singleDay ? request.startDate : `${request.startDate} → ${request.endDate}`;
+  const window = formatTimeWindow(request);
+
+  if (!window) {
+    return dates;
+  }
+
+  return singleDay ? `${dates} ${window}` : `${dates} เวลา ${window} ทุกวัน`;
 }
 
 // One line used in DMs, modals and the card's notification text.
@@ -255,6 +267,10 @@ export function describeChanges(before: ResourceRequest, after: ResourceRequest)
   const changes = fields
     .filter(([key]) => before[key] !== after[key])
     .map(([, label, show]) => `${label}: ${show(before)} → ${show(after)}`);
+
+  if (before.startTime !== after.startTime || before.endTime !== after.endTime) {
+    changes.push(`เวลา: ${formatTimeWindow(before) ?? "ไม่ระบุ"} → ${formatTimeWindow(after) ?? "ไม่ระบุ"}`);
+  }
 
   if (before.reason !== after.reason) {
     changes.push("แก้รายละเอียดงาน");

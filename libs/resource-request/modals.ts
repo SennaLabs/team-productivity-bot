@@ -84,6 +84,22 @@ function datePicker(blockId: string, label: string, initial?: string) {
   };
 }
 
+function timePicker(blockId: string, label: string, initial: string | null | undefined, hint?: string) {
+  return {
+    type: "input",
+    block_id: blockId,
+    optional: true,
+    label: plain(label),
+    ...(hint ? { hint: plain(hint) } : {}),
+    element: {
+      type: "timepicker",
+      action_id: INPUT,
+      placeholder: plain("ไม่ระบุ"),
+      ...(initial ? { initial_time: initial } : {}),
+    },
+  };
+}
+
 function projectInput(projects: readonly string[], initial?: string) {
   if (!projects.length) {
     return {
@@ -145,6 +161,13 @@ export function createResourceRequestModal(
       ),
       datePicker("start_date", "ช่วงวันที่ เริ่ม", existing?.startDate),
       datePicker("end_date", "ช่วงวันที่ สิ้นสุด", existing?.endDate),
+      timePicker(
+        "start_time",
+        "เวลาเริ่ม (ไม่บังคับ)",
+        existing?.startTime,
+        "ใส่เมื่อต้องการช่วงเวลาเฉพาะ ใช้กับทุกวันในช่วงที่เลือก เช่น 13:00–14:00",
+      ),
+      timePicker("end_time", "เวลาสิ้นสุด (ไม่บังคับ)", existing?.endTime),
       staticSelect("urgency", "ความเร่งด่วน", URGENCIES, existing?.urgency ?? "Normal"),
       {
         type: "input",
@@ -169,6 +192,7 @@ function readInput(payload: SlackInteractionPayload, blockId: string) {
   return (
     input?.selected_option?.value ??
     input?.selected_date ??
+    input?.selected_time ??
     input?.selected_user ??
     input?.value ??
     undefined
@@ -184,6 +208,8 @@ export function readResourceRequestForm(payload: SlackInteractionPayload): Resou
     unit: readInput(payload, "unit"),
     start_date: readInput(payload, "start_date"),
     end_date: readInput(payload, "end_date"),
+    start_time: readInput(payload, "start_time"),
+    end_time: readInput(payload, "end_time"),
     urgency: readInput(payload, "urgency"),
     reason: readInput(payload, "reason"),
   };

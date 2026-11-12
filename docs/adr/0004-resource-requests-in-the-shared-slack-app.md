@@ -24,4 +24,5 @@ Requests are kept in the top-level `resourceRequests` collection, one document p
 - Buttons and the "⋯" menu read the request before showing their modal, so they open a loading modal first and replace it once the read finishes; the trigger_id would otherwise expire on a cold start.
 - Mandays may not exceed the Mon–Fri working days in the range. Public holidays are not known.
 - Amounts are entered in minutes, hours or mandays in 15-minute steps, but stored as mandays (1 manday = 8 hours). 15 minutes is 1/32 of a manday, which a float holds exactly, so totals in `/borrowed` add up without rounding.
+- An optional daily time window (`startTime`/`endTime`, HH:MM wall-clock time) applies to every day of the range and caps the amount at the window per working day, at most one manday. Two requests overlap only if their dates and windows both overlap; a request without a window meets every window. Requests saved before the window existed read as having none.
 - `/borrowed` filters on `endDate` only, which needs no composite index.

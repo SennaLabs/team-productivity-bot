@@ -41,6 +41,9 @@ export function toResourceRequest(
     mandays: typeof data.mandays === "number" ? data.mandays : 0,
     startDate: toString(data.startDate),
     endDate: toString(data.endDate),
+    // Requests made before times existed have neither field.
+    startTime: toNullableString(data.startTime),
+    endTime: toNullableString(data.endTime),
     urgency,
     reason: toString(data.reason),
     status,
