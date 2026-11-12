@@ -51,3 +51,18 @@ _Added_: 2026-10-05
 A PR Review Request that its creator set to post at a later time and that has not posted yet. Only its creator can cancel it; once it posts it is an ordinary PR Review Request and can no longer be cancelled, only deleted.
 _Avoid_: Scheduled message, scheduleMessage
 _Added_: 2026-10-05
+
+**Resource Request**:
+A request, made by a PM or Sales in Slack, to borrow one named person for another project for a number of mandays within a date range. It is decided once by the Owner PM; until then its Requester can edit or cancel it, and an approved one can still be cancelled.
+_Avoid_: Booking, allocation
+_Added_: 2026-11-12
+
+**Requester**:
+The Slack member who submits a Resource Request.
+
+**Borrowed Person**:
+The person a Resource Request asks for, usually a Dev, sometimes QA or a Designer.
+
+**Owner PM**:
+The PM who looks after the Borrowed Person and is tagged on the Resource Request. Only they, or a Resource Request admin, may approve, reject or ask for more information.
+_Avoid_: Approver (an admin can approve too)

@@ -1,0 +1,91 @@
+export type ResourceRequestStatus =
+  | "Pending"
+  | "Need Info"
+  | "Approved"
+  | "Rejected"
+  | "Cancelled";
+
+export type ResourceRequestUrgency = "Low" | "Normal" | "Urgent";
+
+// What the requester fills in: borrow one person from the PM who looks after them.
+export type ResourceRequestInput = {
+  personId: string;
+  ownerPmId: string;
+  project: string;
+  // Whole or half days, never more than the working days between the dates.
+  mandays: number;
+  // YYYY-MM-DD, inclusive.
+  startDate: string;
+  endDate: string;
+  urgency: ResourceRequestUrgency;
+  reason: string;
+};
+
+export type ResourceRequest = ResourceRequestInput & {
+  requestId: string;
+  createdAt: string;
+  requesterId: string;
+  requesterName: string | null;
+  status: ResourceRequestStatus;
+  // Who made the latest decision, or who cancelled it.
+  decidedBy: string | null;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  // Where the card lives, so later changes can redraw it.
+  channelId: string | null;
+  messageTs: string | null;
+};
+
+export type ResourceRequestDecision = {
+  type: "approve" | "reject" | "need_info";
+  note: string;
+};
+
+// What a read-check-write decides: the record to save (if any) and what to return.
+export type ResourceRequestMutation<T> = {
+  update?: ResourceRequest;
+  result: T;
+};
+
+export type DecisionResult =
+  | { ok: true; request: ResourceRequest }
+  | { ok: false; reason: "not_found" | "note_required" }
+  | {
+      ok: false;
+      reason: "not_approver" | "already_decided";
+      request: ResourceRequest;
+    };
+
+export type ChangeResult =
+  | { ok: true; request: ResourceRequest; previous: ResourceRequest }
+  | { ok: false; reason: "not_found" }
+  | {
+      ok: false;
+      reason: "not_requester" | "not_editable";
+      request: ResourceRequest;
+    };
+
+export type DateRange = {
+  start: string;
+  end: string;
+};
+
+export type ResourceRequestOverlaps = {
+  // The same person already lent out over overlapping dates.
+  approved: ResourceRequest[];
+  // Other requests for the same person and dates still waiting for a decision.
+  pending: ResourceRequest[];
+};
+
+export type BorrowedPerson = {
+  personId: string;
+  // Sum of the full mandays of each request, even one that only partly falls in the range.
+  totalMandays: number;
+  requests: ResourceRequest[];
+};
+
+export type ResourceRequestSettings = {
+  channelId: string | null;
+  adminIds: string[];
+  projects: string[];
+};

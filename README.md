@@ -29,6 +29,18 @@ it creates an HttpOnly session cookie.
 The Firebase private key must remain server-side. Daily and issue submissions
 are stored under `slackChannels/{channelId}` in Firestore.
 
+Resource requests (`/request-resource`, `/borrowed`) are stored in the top-level
+`resourceRequests` collection and need `RESOURCE_REQUEST_CHANNEL_ID` set to the
+channel their cards are posted to (see `.env.example`). The Slack app needs:
+
+- Slash commands `/request-resource` → `/api/slack/request-resource` and
+  `/borrowed` → `/api/slack/borrowed`
+- A global shortcut with callback ID `resource_request_shortcut` (optional)
+- The `chat:write` and `users:read` bot scopes, and the bot invited to that channel
+
+Buttons and modals use the existing Interactivity URL; see
+`docs/adr/0004-resource-requests-in-the-shared-slack-app.md`.
+
 First, run the development server:
 
 ```bash
