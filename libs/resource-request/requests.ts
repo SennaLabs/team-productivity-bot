@@ -62,6 +62,10 @@ export function formatAmount(mandays: number) {
     return `${minutes / MINUTES_PER_MANDAY} manday`;
   }
 
+  return formatDuration(minutes);
+}
+
+function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
 
@@ -84,6 +88,20 @@ export const MAX_PROJECT_LENGTH = 200;
 export const MAX_REASON_LENGTH = 2000;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function minutesOfDay(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+
+  return hours * 60 + minutes;
+}
+
+// A window longer than a manday, e.g. 09:00–18:00 with lunch, still counts as one manday a day.
+function minutesPerDay(startTime: string | null, endTime: string | null) {
+  return startTime && endTime
+    ? Math.min(minutesOfDay(endTime) - minutesOfDay(startTime), MINUTES_PER_MANDAY)
+    : MINUTES_PER_MANDAY;
+}
 
 // Mon–Fri between two dates, inclusive. Public holidays are not known here.
 export function workingDays(start: string, end: string) {
@@ -114,6 +132,8 @@ export type ResourceRequestForm = Partial<
     | "unit"
     | "start_date"
     | "end_date"
+    | "start_time"
+    | "end_time"
     | "urgency"
     | "reason",
     string
@@ -134,6 +154,8 @@ export function validateResourceRequestForm(
   let minutes = 0;
   const startDate = form.start_date ?? "";
   const endDate = form.end_date ?? "";
+  const startTime = form.start_time || null;
+  const endTime = form.end_time || null;
   const urgency = URGENCIES.find((value) => value === form.urgency);
 
   if (!form.person) {
@@ -180,13 +202,29 @@ export function validateResourceRequestForm(
     errors.end_date = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
   }
 
+  if (startTime && !TIME.test(startTime)) {
+    errors.start_time = "เวลาไม่ถูกต้อง";
+  } else if (endTime && !TIME.test(endTime)) {
+    errors.end_time = "เวลาไม่ถูกต้อง";
+  } else if (startTime && !endTime) {
+    errors.end_time = "ใส่เวลาสิ้นสุดด้วย หรือลบเวลาเริ่มออก";
+  } else if (endTime && !startTime) {
+    errors.start_time = "ใส่เวลาเริ่มด้วย หรือลบเวลาสิ้นสุดออก";
+  } else if (startTime && endTime && endTime <= startTime) {
+    errors.end_time = "เวลาสิ้นสุดต้องหลังเวลาเริ่ม";
+  }
+
   const mandays = minutes / MINUTES_PER_MANDAY;
+  const hasTimeError = Boolean(errors.start_time || errors.end_time);
 
-  if (minutes && !errors.amount && !errors.start_date && !errors.end_date) {
+  if (minutes && !errors.amount && !errors.start_date && !errors.end_date && !hasTimeError) {
     const days = workingDays(startDate, endDate);
+    const available = days * minutesPerDay(startTime, endTime);
 
-    if (minutes > days * MINUTES_PER_MANDAY) {
-      errors.amount = `ช่วงวันที่เลือกมีวันทำงาน ${days} วัน แต่ขอ ${formatAmount(mandays)}`;
+    if (minutes > available) {
+      errors.amount = startTime
+        ? `ช่วงที่เลือกมีวันทำงาน ${days} วัน วันละ ${startTime}–${endTime} รวม ${formatDuration(available)} แต่ขอ ${formatDuration(minutes)}`
+        : `ช่วงวันที่เลือกมีวันทำงาน ${days} วัน แต่ขอ ${formatAmount(mandays)}`;
     }
   }
 
@@ -213,6 +251,8 @@ export function validateResourceRequestForm(
       mandays,
       startDate,
       endDate,
+      startTime,
+      endTime,
       urgency,
       reason,
     },
@@ -381,6 +421,18 @@ export function rangesOverlap(a: DateRange, b: DateRange) {
   return a.start <= b.end && b.start <= a.end;
 }
 
+// Without a window a request may take any time of its days, so it meets every window.
+export function timesOverlap(
+  a: Pick<ResourceRequest, "startTime" | "endTime">,
+  b: Pick<ResourceRequest, "startTime" | "endTime">,
+) {
+  if (!a.startTime || !a.endTime || !b.startTime || !b.endTime) {
+    return true;
+  }
+
+  return a.startTime < b.endTime && b.startTime < a.endTime;
+}
+
 function rangeOf(request: ResourceRequest): DateRange {
   return { start: request.startDate, end: request.endDate };
 }
@@ -392,7 +444,7 @@ function byStartDate(a: ResourceRequest, b: ResourceRequest) {
   );
 }
 
-// Other requests that borrow the same person over overlapping dates.
+// Other requests that borrow the same person over overlapping dates and times.
 export function findOverlaps(
   request: ResourceRequest,
   others: readonly ResourceRequest[],
@@ -401,7 +453,8 @@ export function findOverlaps(
     (other) =>
       other.requestId !== request.requestId &&
       other.personId === request.personId &&
-      rangesOverlap(rangeOf(other), rangeOf(request)),
+      rangesOverlap(rangeOf(other), rangeOf(request)) &&
+      timesOverlap(other, request),
   );
 
   return {

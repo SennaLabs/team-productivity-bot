@@ -53,7 +53,7 @@ _Avoid_: Scheduled message, scheduleMessage
 _Added_: 2026-10-05
 
 **Resource Request**:
-A request, made by a PM or Sales in Slack, to borrow one named person for another project for an amount of time within a date range. The amount is asked for in 15-minute steps and counted in mandays of 8 hours. It is decided once by the Owner PM; until then its Requester can edit or cancel it, and an approved one can still be cancelled.
+A request, made by a PM or Sales in Slack, to borrow one named person for another project for an amount of time within a date range. The amount is asked for in 15-minute steps and counted in mandays of 8 hours. It may name a daily time window, such as 13:00–14:00, that applies to every day of the range. It is decided once by the Owner PM; until then its Requester can edit or cancel it, and an approved one can still be cancelled.
 _Avoid_: Booking, allocation
 _Added_: 2026-11-12
 

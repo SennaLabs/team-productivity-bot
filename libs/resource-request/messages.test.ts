@@ -5,6 +5,7 @@ import {
   createResourceRequestCard,
   decodeManageValue,
   describeChanges,
+  formatDateRange,
   notices,
   RESOURCE_REQUEST_IDS,
 } from "./messages.ts";
@@ -32,6 +33,8 @@ function request(overrides: Partial<ResourceRequest> = {}): ResourceRequest {
         mandays: 2,
         startDate: "2026-12-01",
         endDate: "2026-12-04",
+        startTime: null,
+        endTime: null,
         urgency: "Normal",
         reason: "Demo",
       },
@@ -132,6 +135,7 @@ test("reads the submitted form back from Slack's view state", () => {
           amount: { value: { value: "1.5" } },
           unit: { value: { selected_option: { value: "hours" } } },
           start_date: { value: { selected_date: "2026-12-01" } },
+          start_time: { value: { selected_time: "13:00" } },
         },
       },
     },
@@ -145,9 +149,30 @@ test("reads the submitted form back from Slack's view state", () => {
     unit: "hours",
     start_date: "2026-12-01",
     end_date: undefined,
+    start_time: "13:00",
+    end_time: undefined,
     urgency: undefined,
     reason: undefined,
   });
+});
+
+test("shows a daily time window with the dates", () => {
+  const oneDay = request({ startDate: "2027-07-03", endDate: "2027-07-03", startTime: "13:00", endTime: "14:00" });
+  const days = request({ startTime: "09:30", endTime: "10:00" });
+  const card = JSON.stringify(createResourceRequestCard(oneDay));
+
+  assert.ok(card.includes("2027-07-03 13:00–14:00"));
+  assert.ok(JSON.stringify(createResourceRequestCard(days)).includes("2026-12-01 → 2026-12-04 เวลา 09:30–10:00 ทุกวัน"));
+  assert.equal(formatDateRange(request()), "2026-12-01 → 2026-12-04");
+  assert.deepEqual(describeChanges(request(), oneDay).filter((line) => line.startsWith("เวลา")), ["เวลา: ไม่ระบุ → 13:00–14:00"]);
+});
+
+test("the edit form keeps the time window", () => {
+  const json = JSON.stringify(createResourceRequestModal([], request({ startTime: "13:00", endTime: "14:00" })));
+
+  assert.ok(json.includes('"initial_time":"13:00"'));
+  assert.ok(json.includes('"initial_time":"14:00"'));
+  assert.ok(!JSON.stringify(createResourceRequestModal([], request())).includes("initial_time"));
 });
 
 test("describes what an edit changed", () => {
