@@ -16,6 +16,10 @@ import {
   MAX_WATCHER_NOTE_LENGTH,
 } from "@/libs/messages";
 import { createIssueModal, createPrModal } from "@/libs/modals";
+import {
+  handleResourceRequestInteraction,
+  isResourceRequestPayload,
+} from "@/libs/resource-request/interactions";
 import type {
   DailySubmission,
   IssueSubmission,
@@ -509,6 +513,12 @@ export async function handleSlackInteraction(request: Request) {
 
   if (!payload) {
     return Response.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  // The Slack app has one Interactivity URL, so resource requests share it and
+  // are told apart by their resource_request_ IDs.
+  if (isResourceRequestPayload(payload)) {
+    return handleResourceRequestInteraction(payload);
   }
 
   if (payload.type === "block_actions") {

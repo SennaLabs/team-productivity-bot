@@ -73,26 +73,64 @@ async function callSlack<T extends SlackApiResponse>(
   return result;
 }
 
+// Returns the view ID, so a modal opened as a placeholder can be replaced later.
 export async function openSlackModal(triggerId: string, view: SlackModal) {
-  await callSlack("views.open", { trigger_id: triggerId, view });
+  const result = await callSlack<SlackApiResponse & { view?: { id?: string } }>(
+    "views.open",
+    { trigger_id: triggerId, view },
+  );
+
+  return result.view?.id;
 }
 
 export async function updateSlackModal(viewId: string, view: SlackModal) {
   await callSlack("views.update", { view_id: viewId, view });
 }
 
+// Returns the message ts, which is how a later chat.update finds the message.
 export async function postSlackMessage(
   channel: string,
-  message: { text: string; blocks: SlackBlock[] },
+  message: { text: string; blocks?: SlackBlock[] },
   threadTs?: string,
 ) {
   // JSON.stringify drops thread_ts when it is undefined, so the same call serves
   // both a top-level post and a threaded reply.
-  await callSlack("chat.postMessage", {
-    channel,
-    ...message,
-    thread_ts: threadTs,
+  const result = await callSlack<SlackApiResponse & { ts?: string }>(
+    "chat.postMessage",
+    {
+      channel,
+      ...message,
+      thread_ts: threadTs,
+    },
+  );
+
+  return result.ts;
+}
+
+export async function getSlackPermalink(channel: string, messageTs: string) {
+  const result = await callSlack<SlackApiResponse & { permalink?: string }>(
+    "chat.getPermalink",
+    new URLSearchParams({ channel, message_ts: messageTs }),
+  );
+
+  return result.permalink;
+}
+
+// A slash command's response_url takes replies for 30 minutes, so a reply that
+// needs a slow lookup can be sent after the command's 3-second window.
+export async function respondToSlackCommand(
+  responseUrl: string,
+  message: { text: string; blocks?: SlackBlock[] },
+) {
+  const response = await fetch(responseUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ response_type: "ephemeral", ...message }),
   });
+
+  if (!response.ok) {
+    throw new Error(`response_url failed: HTTP ${response.status}`);
+  }
 }
 
 export async function scheduleSlackMessage(

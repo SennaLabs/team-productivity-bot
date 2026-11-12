@@ -27,7 +27,9 @@ export type SlackInputValue = {
     value?: string;
   };
   selected_time?: string;
+  selected_date?: string;
   selected_date_time?: number;
+  selected_user?: string;
   selected_users?: string[];
   timezone?: string;
 };
