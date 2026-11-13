@@ -164,7 +164,7 @@ export function createResourceRequestModal(
         type: "input",
         block_id: "amount",
         label: plain("จำนวน (ต่อคน)"),
-        hint: plain("ทีละ 15 นาที เช่น 30 นาที, 1.5 ชั่วโมง, 2 manday (1 manday = 8 ชั่วโมง)"),
+        hint: plain("กี่นาทีก็ได้ เช่น 10 นาที, 1.5 ชั่วโมง, 2 manday (1 manday = 8 ชั่วโมง)"),
         element: {
           type: "number_input",
           action_id: INPUT,

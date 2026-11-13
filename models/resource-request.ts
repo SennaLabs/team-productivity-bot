@@ -13,7 +13,7 @@ export type ResourceRequestInput = {
   personIds: string[];
   ownerPmId: string;
   project: string;
-  // In 15-minute steps (1 manday = 8 hours), never more than the working time
+  // Whole minutes (1 manday = 8 hours), never more than the working time
   // between the dates.
   mandays: number;
   // YYYY-MM-DD, inclusive.

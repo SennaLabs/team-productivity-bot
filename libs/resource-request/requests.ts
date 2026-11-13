@@ -36,10 +36,10 @@ export const CANCELLABLE_STATUSES: readonly ResourceRequestStatus[] = [
 export const MAX_MANDAYS = 100;
 // Keeps the overlap lookup within Firestore's 30-value limit and the card readable.
 export const MAX_PEOPLE = 10;
-// Requests are stored in mandays, but asked for in 15-minute steps. 15 minutes is
-// 1/32 of a manday, which a float holds exactly, so sums never drift.
+// Requests are stored in mandays but asked for in whole minutes. A minute is not
+// an exact fraction of a manday in floating point, so anything that shows or
+// compares an amount converts back to whole minutes first.
 export const MINUTES_PER_MANDAY = 8 * 60;
-const MINUTE_STEP = 15;
 
 export const AMOUNT_UNITS = ["minutes", "hours", "mandays"] as const;
 export type AmountUnit = (typeof AMOUNT_UNITS)[number];
@@ -82,9 +82,10 @@ export function toAmountInput(mandays: number): { amount: string; unit: AmountUn
     return { amount: String(minutes / MINUTES_PER_MANDAY), unit: "mandays" };
   }
 
-  return minutes < 60
-    ? { amount: String(minutes), unit: "minutes" }
-    : { amount: String(minutes / 60), unit: "hours" };
+  // Quarter hours stay short as hours (1.25); anything else, e.g. 70, reads better as minutes.
+  return minutes >= 60 && minutes % 15 === 0
+    ? { amount: String(minutes / 60), unit: "hours" }
+    : { amount: String(minutes), unit: "minutes" };
 }
 export const MAX_PROJECT_LENGTH = 200;
 export const MAX_REASON_LENGTH = 2000;
@@ -207,8 +208,8 @@ export function validateResourceRequestForm(
     minutes = Math.round(exact);
 
     // The tolerance absorbs float noise such as 1.1 * 60.
-    if (Math.abs(exact - minutes) > 1e-6 || minutes % MINUTE_STEP !== 0) {
-      errors.amount = "ใส่ทีละ 15 นาที เช่น 15 นาที, 1.5 ชั่วโมง, 0.5 manday";
+    if (Math.abs(exact - minutes) > 1e-6 || minutes === 0) {
+      errors.amount = "ใส่เป็นนาทีเต็ม เช่น 10 นาที, 1.5 ชั่วโมง, 0.5 manday";
     } else if (minutes > MAX_MANDAYS * MINUTES_PER_MANDAY) {
       errors.amount = `ขอได้ไม่เกิน ${MAX_MANDAYS} manday`;
     }

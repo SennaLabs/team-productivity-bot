@@ -91,17 +91,17 @@ test("reports every missing field by block_id", () => {
   );
 });
 
-test("takes amounts in 15-minute steps in any unit", () => {
+test("takes any whole number of minutes in any unit", () => {
   for (const [amount, unit, mandays] of [
-    ["15", "minutes", 1 / 32],
-    ["30", "minutes", 1 / 16],
+    ["1", "minutes", 1 / 480],
+    ["10", "minutes", 10 / 480],
+    ["1.1", "hours", 66 / 480],
     ["1.25", "hours", 1.25 / 8],
-    ["1.5", "hours", 1.5 / 8],
+    ["0.3", "mandays", 144 / 480],
     ["0.5", "mandays", 0.5],
     ["100", "mandays", 100],
-    ["10", "minutes", null],
-    ["1.1", "hours", null],
-    ["0.3", "mandays", null],
+    ["10.5", "minutes", null],
+    ["0.01", "hours", null],
     ["0", "minutes", null],
     ["abc", "hours", null],
     ["101", "mandays", null],
@@ -118,9 +118,17 @@ test("shows an amount in the unit that reads naturally", () => {
     ["15 นาที", "30 นาที", "1 ชม. 30 นาที", "8 ชม. 30 นาที", "0.5 manday", "2 manday", "0 manday"],
   );
   assert.deepEqual(
-    [1 / 16, 1.25 / 8, 1.5].map(toAmountInput),
-    [{ amount: "30", unit: "minutes" }, { amount: "1.25", unit: "hours" }, { amount: "1.5", unit: "mandays" }],
+    [1 / 16, 1.25 / 8, 70 / 480, 1.5].map(toAmountInput),
+    [
+      { amount: "30", unit: "minutes" },
+      { amount: "1.25", unit: "hours" },
+      { amount: "70", unit: "minutes" },
+      { amount: "1.5", unit: "mandays" },
+    ],
   );
+  // Minutes are not exact in a float; totals still read as whole minutes.
+  assert.equal(formatAmount([7, 13, 40].reduce((sum, minutes) => sum + minutes / 480, 0)), "1 ชม.");
+  assert.equal(formatAmount(7 / 480), "7 นาที");
 });
 
 test("refuses an end date before the start date", () => {
