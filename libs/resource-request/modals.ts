@@ -16,6 +16,7 @@ import {
 import {
   AMOUNT_UNITS,
   formatAmount,
+  MAX_PEOPLE,
   MAX_PROJECT_LENGTH,
   MAX_REASON_LENGTH,
   toAmountInput,
@@ -71,6 +72,22 @@ function userSelect(blockId: string, label: string, hint: string, initial?: stri
   };
 }
 
+function peopleSelect(initial?: readonly string[]) {
+  return {
+    type: "input",
+    block_id: "person",
+    label: plain("คนที่ต้องการยืม"),
+    hint: plain(`Dev / QA / Designer เลือกได้สูงสุด ${MAX_PEOPLE} คน ที่ PM คนเดียวกันดูแล`),
+    element: {
+      type: "multi_users_select",
+      action_id: INPUT,
+      placeholder: plain("เลือกคน"),
+      max_selected_items: MAX_PEOPLE,
+      ...(initial?.length ? { initial_users: initial } : {}),
+    },
+  };
+}
+
 function datePicker(blockId: string, label: string, initial?: string) {
   return {
     type: "input",
@@ -84,18 +101,21 @@ function datePicker(blockId: string, label: string, initial?: string) {
   };
 }
 
-function timePicker(blockId: string, label: string, initial: string | null | undefined, hint?: string) {
+function timeWindowInput(existing?: ResourceRequest) {
+  const initial =
+    existing?.startTime && existing.endTime ? `${existing.startTime}-${existing.endTime}` : undefined;
+
   return {
     type: "input",
-    block_id: blockId,
+    block_id: "time_window",
     optional: true,
-    label: plain(label),
-    ...(hint ? { hint: plain(hint) } : {}),
+    label: plain("ช่วงเวลา (ไม่บังคับ)"),
+    hint: plain("ใช้กับทุกวันในช่วงที่เลือก เว้นว่างถ้าไม่ระบุเวลา"),
     element: {
-      type: "timepicker",
+      type: "plain_text_input",
       action_id: INPUT,
-      placeholder: plain("ไม่ระบุ"),
-      ...(initial ? { initial_time: initial } : {}),
+      placeholder: plain("เช่น 13:00-14:00 หรือ 9.30-10.15"),
+      ...(initial ? { initial_value: initial } : {}),
     },
   };
 }
@@ -137,14 +157,14 @@ export function createResourceRequestModal(
     submit: plain(existing ? "บันทึก" : "ส่งคำขอ"),
     close: plain("ยกเลิก"),
     blocks: [
-      userSelect("person", "คนที่ต้องการยืม", "Dev / QA / Designer ที่อยากได้", existing?.personId),
-      userSelect("owner_pm", "ขอจาก PM", "PM ที่ดูแลคนนี้อยู่ เป็นคนอนุมัติ", existing?.ownerPmId),
+      peopleSelect(existing?.personIds),
+      userSelect("owner_pm", "ขอจาก PM", "PM ที่ดูแลคนเหล่านี้อยู่ เป็นคนอนุมัติ", existing?.ownerPmId),
       projectInput(projects, existing?.project),
       {
         type: "input",
         block_id: "amount",
-        label: plain("จำนวน"),
-        hint: plain("ทีละ 15 นาที เช่น 30 นาที, 1.5 ชั่วโมง, 2 manday (1 manday = 8 ชั่วโมง)"),
+        label: plain("จำนวน (ต่อคน)"),
+        hint: plain("กี่นาทีก็ได้ เช่น 10 นาที, 1.5 ชั่วโมง, 2 manday (1 manday = 8 ชั่วโมง)"),
         element: {
           type: "number_input",
           action_id: INPUT,
@@ -161,13 +181,7 @@ export function createResourceRequestModal(
       ),
       datePicker("start_date", "ช่วงวันที่ เริ่ม", existing?.startDate),
       datePicker("end_date", "ช่วงวันที่ สิ้นสุด", existing?.endDate),
-      timePicker(
-        "start_time",
-        "เวลาเริ่ม (ไม่บังคับ)",
-        existing?.startTime,
-        "ใส่เมื่อต้องการช่วงเวลาเฉพาะ ใช้กับทุกวันในช่วงที่เลือก เช่น 13:00–14:00",
-      ),
-      timePicker("end_time", "เวลาสิ้นสุด (ไม่บังคับ)", existing?.endTime),
+      timeWindowInput(existing),
       staticSelect("urgency", "ความเร่งด่วน", URGENCIES, existing?.urgency ?? "Normal"),
       {
         type: "input",
@@ -192,7 +206,6 @@ function readInput(payload: SlackInteractionPayload, blockId: string) {
   return (
     input?.selected_option?.value ??
     input?.selected_date ??
-    input?.selected_time ??
     input?.selected_user ??
     input?.value ??
     undefined
@@ -201,15 +214,14 @@ function readInput(payload: SlackInteractionPayload, blockId: string) {
 
 export function readResourceRequestForm(payload: SlackInteractionPayload): ResourceRequestForm {
   return {
-    person: readInput(payload, "person"),
+    person: payload.view?.state?.values?.person?.[INPUT]?.selected_users ?? undefined,
     owner_pm: readInput(payload, "owner_pm"),
     project: readInput(payload, "project"),
     amount: readInput(payload, "amount"),
     unit: readInput(payload, "unit"),
     start_date: readInput(payload, "start_date"),
     end_date: readInput(payload, "end_date"),
-    start_time: readInput(payload, "start_time"),
-    end_time: readInput(payload, "end_time"),
+    time_window: readInput(payload, "time_window"),
     urgency: readInput(payload, "urgency"),
     reason: readInput(payload, "reason"),
   };
@@ -268,28 +280,34 @@ export function createOverlapBlocks(
 ): SlackBlock[] {
   const blocks: SlackBlock[] = [];
 
-  if (overlaps.approved.length) {
-    const total = overlaps.approved.reduce((sum, other) => sum + other.mandays, 0);
+  // One warning per person, since each may be lent out to different requests.
+  for (const personId of request.personIds) {
+    const approved = overlaps.approved.filter((other) => other.personIds.includes(personId));
+    const pending = overlaps.pending.filter((other) => other.personIds.includes(personId));
 
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `:warning: *<@${request.personId}> ถูกยืมไปแล้ว ${formatAmount(total)} ในช่วงที่ทับกัน*\n${overlaps.approved.map(overlapLine).join("\n")}`,
-      },
-    });
-  }
+    if (approved.length) {
+      const total = approved.reduce((sum, other) => sum + other.mandays, 0);
 
-  if (overlaps.pending.length) {
-    blocks.push({
-      type: "context",
-      elements: [
-        {
+      blocks.push({
+        type: "section",
+        text: {
           type: "mrkdwn",
-          text: `:hourglass_flowing_sand: มีคำขออื่นที่ยืม <@${request.personId}> ช่วงเดียวกันและยังรออนุมัติ\n${overlaps.pending.map(overlapLine).join("\n")}`,
+          text: `:warning: *<@${personId}> ถูกยืมไปแล้ว ${formatAmount(total)} ในช่วงที่ทับกัน*\n${approved.map(overlapLine).join("\n")}`,
         },
-      ],
-    });
+      });
+    }
+
+    if (pending.length) {
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `:hourglass_flowing_sand: มีคำขออื่นที่ยืม <@${personId}> ช่วงเดียวกันและยังรออนุมัติ\n${pending.map(overlapLine).join("\n")}`,
+          },
+        ],
+      });
+    }
   }
 
   return blocks.length ? [{ type: "divider" }, ...blocks] : [];

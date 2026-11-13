@@ -21,6 +21,17 @@ function toNullableString(value: unknown) {
   return typeof value === "string" && value ? value : null;
 }
 
+function toPersonIds(data: Record<string, unknown>) {
+  if (Array.isArray(data.personIds)) {
+    return data.personIds.filter((id): id is string => typeof id === "string" && id !== "");
+  }
+
+  // Requests made before several people could be borrowed stored one personId.
+  const personId = toString(data.personId);
+
+  return personId ? [personId] : [];
+}
+
 // Tolerates missing or mistyped fields, e.g. a document edited by hand in the
 // console, rather than failing the whole read.
 export function toResourceRequest(
@@ -35,7 +46,7 @@ export function toResourceRequest(
     createdAt: toString(data.createdAt),
     requesterId: toString(data.requesterId),
     requesterName: toNullableString(data.requesterName),
-    personId: toString(data.personId),
+    personIds: toPersonIds(data),
     ownerPmId: toString(data.ownerPmId),
     project: toString(data.project),
     mandays: typeof data.mandays === "number" ? data.mandays : 0,

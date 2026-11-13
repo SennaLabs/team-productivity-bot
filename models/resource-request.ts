@@ -7,12 +7,13 @@ export type ResourceRequestStatus =
 
 export type ResourceRequestUrgency = "Low" | "Normal" | "Urgent";
 
-// What the requester fills in: borrow one person from the PM who looks after them.
+// What the requester fills in: borrow people from the PM who looks after them.
 export type ResourceRequestInput = {
-  personId: string;
+  // At least one; every person gets the full amount below.
+  personIds: string[];
   ownerPmId: string;
   project: string;
-  // In 15-minute steps (1 manday = 8 hours), never more than the working time
+  // Whole minutes (1 manday = 8 hours), never more than the working time
   // between the dates.
   mandays: number;
   // YYYY-MM-DD, inclusive.

@@ -83,8 +83,18 @@ export async function deleteResourceRequest(requestId: string) {
   await getCollection().doc(requestId).delete();
 }
 
-export async function listResourceRequestsForPerson(personId: string) {
-  return toRequests(await getCollection().where("personId", "==", personId).get());
+// Requests that borrow any of these people. Older documents keep a single
+// personId, so they need their own query. Both operators take at most 30 values.
+export async function listResourceRequestsForPeople(personIds: string[]) {
+  const [current, legacy] = await Promise.all([
+    getCollection().where("personIds", "array-contains-any", personIds).get(),
+    getCollection().where("personId", "in", personIds).get(),
+  ]);
+  const byId = new Map(
+    [...toRequests(current), ...toRequests(legacy)].map((request) => [request.requestId, request]),
+  );
+
+  return [...byId.values()];
 }
 
 // Requests whose endDate is on or after the date (YYYY-MM-DD).
