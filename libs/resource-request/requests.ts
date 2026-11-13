@@ -34,6 +34,8 @@ export const CANCELLABLE_STATUSES: readonly ResourceRequestStatus[] = [
 ];
 
 export const MAX_MANDAYS = 100;
+// Keeps the overlap lookup within Firestore's 30-value limit and the card readable.
+export const MAX_PEOPLE = 10;
 // Requests are stored in mandays, but asked for in 15-minute steps. 15 minutes is
 // 1/32 of a manday, which a float holds exactly, so sums never drift.
 export const MINUTES_PER_MANDAY = 8 * 60;
@@ -140,9 +142,8 @@ export function workingDays(start: string, end: string) {
 }
 
 // Raw form values, keyed by the modal's block_ids.
-export type ResourceRequestForm = Partial<
+export type ResourceRequestForm = { person?: string[] } & Partial<
   Record<
-    | "person"
     | "owner_pm"
     | "project"
     | "amount"
@@ -175,9 +176,12 @@ export function validateResourceRequestForm(
   const startTime = window?.startTime ?? null;
   const endTime = window?.endTime ?? null;
   const urgency = URGENCIES.find((value) => value === form.urgency);
+  const personIds = [...new Set(form.person ?? [])];
 
-  if (!form.person) {
+  if (!personIds.length) {
     errors.person = "กรุณาเลือกคนที่ต้องการยืม";
+  } else if (personIds.length > MAX_PEOPLE) {
+    errors.person = `เลือกได้ไม่เกิน ${MAX_PEOPLE} คนต่อคำขอ`;
   }
 
   if (!form.owner_pm) {
@@ -250,14 +254,14 @@ export function validateResourceRequestForm(
     errors.reason = `ยาวได้ไม่เกิน ${MAX_REASON_LENGTH} ตัวอักษร`;
   }
 
-  if (Object.keys(errors).length || !form.person || !form.owner_pm || !urgency) {
+  if (Object.keys(errors).length || !form.owner_pm || !urgency) {
     return { ok: false, errors };
   }
 
   return {
     ok: true,
     input: {
-      personId: form.person,
+      personIds,
       ownerPmId: form.owner_pm,
       project,
       mandays,
@@ -456,7 +460,7 @@ function byStartDate(a: ResourceRequest, b: ResourceRequest) {
   );
 }
 
-// Other requests that borrow the same person over overlapping dates and times.
+// Other requests that borrow any of the same people over overlapping dates and times.
 export function findOverlaps(
   request: ResourceRequest,
   others: readonly ResourceRequest[],
@@ -464,7 +468,7 @@ export function findOverlaps(
   const same = others.filter(
     (other) =>
       other.requestId !== request.requestId &&
-      other.personId === request.personId &&
+      other.personIds.some((personId) => request.personIds.includes(personId)) &&
       rangesOverlap(rangeOf(other), rangeOf(request)) &&
       timesOverlap(other, request),
   );
@@ -487,7 +491,9 @@ export function summarizeBorrowed(
       continue;
     }
 
-    byPerson.set(request.personId, [...(byPerson.get(request.personId) ?? []), request]);
+    for (const personId of request.personIds) {
+      byPerson.set(personId, [...(byPerson.get(personId) ?? []), request]);
+    }
   }
 
   return [...byPerson.entries()]

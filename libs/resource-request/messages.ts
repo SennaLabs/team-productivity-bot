@@ -51,6 +51,17 @@ function mention(userId: string | null) {
   return userId ? `<@${userId}>` : "-";
 }
 
+function mentionAll(userIds: readonly string[]) {
+  return userIds.length ? userIds.map(mention).join(", ") : "-";
+}
+
+// Each borrowed person gets the full amount, so several people read "per person".
+function amountOf(request: Pick<ResourceRequest, "mandays" | "personIds">) {
+  return request.personIds.length > 1
+    ? `${formatAmount(request.mandays)} ต่อคน`
+    : formatAmount(request.mandays);
+}
+
 export function statusLabel(status: ResourceRequestStatus) {
   return STATUS_LABELS[status];
 }
@@ -76,7 +87,7 @@ export function formatDateRange(
 
 // One line used in DMs, modals and the card's notification text.
 export function summarizeRequest(request: ResourceRequest) {
-  return `${request.requestId} · ยืม ${mention(request.personId)} ไป ${escapeMrkdwn(request.project)} · ${formatAmount(request.mandays)} (${formatDateRange(request)})`;
+  return `${request.requestId} · ยืม ${mentionAll(request.personIds)} ไป ${escapeMrkdwn(request.project)} · ${amountOf(request)} (${formatDateRange(request)})`;
 }
 
 export type ManageChoice = "edit" | "cancel";
@@ -102,10 +113,10 @@ export function createResourceRequestCard(request: ResourceRequest) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${mention(request.requesterId)} ขอยืม ${mention(request.personId)} จาก ${mention(request.ownerPmId)} ไปช่วย *${escapeMrkdwn(request.project)}*`,
+        text: `${mention(request.requesterId)} ขอยืม ${mentionAll(request.personIds)} จาก ${mention(request.ownerPmId)} ไปช่วย *${escapeMrkdwn(request.project)}*`,
       },
       fields: [
-        { type: "mrkdwn", text: `*จำนวน*\n${formatAmount(request.mandays)}` },
+        { type: "mrkdwn", text: `*จำนวน*\n${amountOf(request)}` },
         { type: "mrkdwn", text: `*ช่วงวันที่*\n${formatDateRange(request)}` },
         {
           type: "mrkdwn",
@@ -256,7 +267,6 @@ export function createBorrowedMessage(people: BorrowedPerson[], title: string) {
 // What an edit changed, for the card's thread.
 export function describeChanges(before: ResourceRequest, after: ResourceRequest) {
   const fields: [keyof ResourceRequest, string, (request: ResourceRequest) => string][] = [
-    ["personId", "คนที่ยืม", (request) => mention(request.personId)],
     ["ownerPmId", "PM", (request) => mention(request.ownerPmId)],
     ["project", "โปรเจกต์", (request) => escapeMrkdwn(request.project)],
     ["mandays", "จำนวน", (request) => formatAmount(request.mandays)],
@@ -267,6 +277,10 @@ export function describeChanges(before: ResourceRequest, after: ResourceRequest)
   const changes = fields
     .filter(([key]) => before[key] !== after[key])
     .map(([, label, show]) => `${label}: ${show(before)} → ${show(after)}`);
+
+  if (before.personIds.join() !== after.personIds.join()) {
+    changes.unshift(`คนที่ยืม: ${mentionAll(before.personIds)} → ${mentionAll(after.personIds)}`);
+  }
 
   if (before.startTime !== after.startTime || before.endTime !== after.endTime) {
     changes.push(`เวลา: ${formatTimeWindow(before) ?? "ไม่ระบุ"} → ${formatTimeWindow(after) ?? "ไม่ระบุ"}`);
@@ -312,7 +326,7 @@ export const notices = {
       request.decisionNote ? `\nเหตุผล: ${escapeMrkdwn(request.decisionNote)}` : ""
     }\n${
       previous.status === "Approved"
-        ? `${mention(request.ownerPmId)} ${mention(request.personId)} ไม่ต้องไปช่วยงานนี้แล้ว`
+        ? `${mention(request.ownerPmId)} ${mentionAll(request.personIds)} ไม่ต้องไปช่วยงานนี้แล้ว`
         : mention(request.ownerPmId)
     }`,
   submitFailed: ":warning: ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง หรือแจ้งแอดมิน",

@@ -27,7 +27,7 @@ function request(overrides: Partial<ResourceRequest> = {}): ResourceRequest {
   return {
     ...newResourceRequest(
       {
-        personId: EARTH,
+        personIds: [EARTH],
         ownerPmId: RIN,
         project: "Acme App",
         mandays: 2,
@@ -111,7 +111,7 @@ test("the edit form is prefilled and tied to the request", () => {
   assert.equal(modal.private_metadata, "RR-ABCDEF");
 
   for (const value of [
-    `"initial_user":"${EARTH}"`,
+    `"initial_users":["${EARTH}"]`,
     `"initial_user":"${RIN}"`,
     '"initial_value":"1.5"',
     '"initial_option":{"text":{"type":"plain_text","text":"manday","emoji":true},"value":"mandays"}',
@@ -130,7 +130,7 @@ test("reads the submitted form back from Slack's view state", () => {
     view: {
       state: {
         values: {
-          person: { value: { selected_user: EARTH } },
+          person: { value: { selected_users: [EARTH, "U_MOON"] } },
           project: { value: { selected_option: { value: "Acme App" } } },
           amount: { value: { value: "1.5" } },
           unit: { value: { selected_option: { value: "hours" } } },
@@ -142,7 +142,7 @@ test("reads the submitted form back from Slack's view state", () => {
   };
 
   assert.deepEqual(readResourceRequestForm(payload), {
-    person: EARTH,
+    person: [EARTH, "U_MOON"],
     owner_pm: undefined,
     project: "Acme App",
     amount: "1.5",
@@ -207,4 +207,30 @@ test("a stored record round-trips and tolerates bad fields", () => {
   assert.equal(repaired.requestId, "RR-XYZ234");
   assert.equal(repaired.status, "Pending");
   assert.equal(repaired.mandays, 0);
+  assert.deepEqual(repaired.personIds, []);
+  // Requests saved before several people could be borrowed.
+  assert.deepEqual(toResourceRequest("RR-OLD234", { personId: EARTH }).personIds, [EARTH]);
+});
+
+test("several people are tagged together and the amount reads per person", () => {
+  const several = request({ personIds: [EARTH, "U_MOON"] });
+  const card = JSON.stringify(createResourceRequestCard(several));
+
+  assert.ok(card.includes(`ขอยืม <@${EARTH}>, <@U_MOON> จาก`));
+  assert.ok(card.includes("2 manday ต่อคน"));
+  assert.ok(!JSON.stringify(createResourceRequestCard(request())).includes("ต่อคน"));
+  assert.deepEqual(describeChanges(request(), several), [`คนที่ยืม: <@${EARTH}> → <@${EARTH}>, <@U_MOON>`]);
+  assert.deepEqual(describeChanges(several, request({ personIds: [EARTH, "U_MOON"] })), []);
+
+  const json = JSON.stringify(createResourceRequestModal([], several));
+  assert.ok(json.includes(`"initial_users":["${EARTH}","U_MOON"]`));
+});
+
+test("the approve modal warns per person", () => {
+  const several = request({ personIds: [EARTH, "U_MOON"] });
+  const moonBusy = request({ requestId: "RR-MOON22", personIds: ["U_MOON"], project: "Beta", mandays: 1, status: "Approved" });
+  const modal = JSON.stringify(createApproveModal(several, { approved: [moonBusy], pending: [] }));
+
+  assert.ok(modal.includes("<@U_MOON> ถูกยืมไปแล้ว 1 manday"));
+  assert.ok(!modal.includes(`<@${EARTH}> ถูกยืมไปแล้ว`));
 });

@@ -32,7 +32,7 @@ const ADMINS = [ADMIN];
 const NOW = new Date("2026-11-11T03:00:00Z");
 
 const FORM: ResourceRequestForm = {
-  person: EARTH,
+  person: [EARTH],
   owner_pm: RIN,
   project: "Acme App",
   amount: "2",
@@ -67,7 +67,7 @@ test("accepts a complete form and trims text", () => {
   assert.deepEqual(result, {
     ok: true,
     input: {
-      personId: EARTH,
+      personIds: [EARTH],
       ownerPmId: RIN,
       project: "Acme",
       mandays: 1.5,
@@ -303,7 +303,7 @@ test("finds approved and pending requests for the same person over the same date
     current,
     approved,
     pending,
-    request({ personId: "U_OTHER" }),
+    request({ personIds: ["U_OTHER"] }),
     request({ startDate: "2026-12-14", endDate: "2026-12-15" }),
     request({ status: "Rejected" }),
   ];
@@ -314,15 +314,40 @@ test("finds approved and pending requests for the same person over the same date
   assert.deepEqual(overlaps.pending.map((other) => other.requestId), [pending.requestId]);
 });
 
+test("validates the people to borrow", () => {
+  const people = (person: string[]) => validateResourceRequestForm({ ...FORM, person });
+  const twice = people([EARTH, "U_MOON", EARTH]);
+
+  assert.ok(twice.ok);
+  assert.deepEqual(twice.input.personIds, [EARTH, "U_MOON"]);
+  const none = people([]);
+  assert.deepEqual(none.ok ? null : Object.keys(none.errors), ["person"]);
+
+  const eleven = people(Array.from({ length: 11 }, (_, index) => `U${index}`));
+  assert.deepEqual(eleven.ok ? null : eleven.errors, { person: "เลือกได้ไม่เกิน 10 คนต่อคำขอ" });
+});
+
+test("a request for several people overlaps each of them and counts for each in /borrowed", () => {
+  const pair = request({ personIds: ["U_A", "U_B"], mandays: 1, status: "Approved" });
+  const forB = request({ personIds: ["U_B"] });
+
+  assert.deepEqual(findOverlaps(forB, [pair]).approved.map((other) => other.requestId), [pair.requestId]);
+  assert.deepEqual(findOverlaps(request({ personIds: ["U_C"] }), [pair]).approved, []);
+  assert.deepEqual(
+    summarizeBorrowed([pair], monthOf("2026-12-15")).map((person) => [person.personId, person.totalMandays]),
+    [["U_A", 1], ["U_B", 1]],
+  );
+});
+
 test("sums approved borrowings by person, busiest first", () => {
   const people = summarizeBorrowed(
     [
-      request({ personId: "U_A", mandays: 1, status: "Approved" }),
-      request({ personId: "U_B", mandays: 2, project: "B1", status: "Approved" }),
-      request({ personId: "U_B", mandays: 1, project: "B2", startDate: "2026-11-30", endDate: "2026-12-01", status: "Approved" }),
-      request({ personId: "U_C", mandays: 3 }), // pending: not counted
-      request({ personId: "U_D", status: "Cancelled" }),
-      request({ personId: "U_E", startDate: "2027-01-04", endDate: "2027-01-05", status: "Approved" }),
+      request({ personIds: ["U_A"], mandays: 1, status: "Approved" }),
+      request({ personIds: ["U_B"], mandays: 2, project: "B1", status: "Approved" }),
+      request({ personIds: ["U_B"], mandays: 1, project: "B2", startDate: "2026-11-30", endDate: "2026-12-01", status: "Approved" }),
+      request({ personIds: ["U_C"], mandays: 3 }), // pending: not counted
+      request({ personIds: ["U_D"], status: "Cancelled" }),
+      request({ personIds: ["U_E"], startDate: "2027-01-04", endDate: "2027-01-05", status: "Approved" }),
     ],
     monthOf("2026-12-15"),
   );
