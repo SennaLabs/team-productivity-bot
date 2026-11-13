@@ -34,10 +34,12 @@ export const CANCELLABLE_STATUSES: readonly ResourceRequestStatus[] = [
 ];
 
 export const MAX_MANDAYS = 100;
-// Requests are stored in mandays, but asked for in 15-minute steps. 15 minutes is
-// 1/32 of a manday, which a float holds exactly, so sums never drift.
+// Keeps the overlap lookup within Firestore's 30-value limit and the card readable.
+export const MAX_PEOPLE = 10;
+// Requests are stored in mandays but asked for in whole minutes. A minute is not
+// an exact fraction of a manday in floating point, so anything that shows or
+// compares an amount converts back to whole minutes first.
 export const MINUTES_PER_MANDAY = 8 * 60;
-const MINUTE_STEP = 15;
 
 export const AMOUNT_UNITS = ["minutes", "hours", "mandays"] as const;
 export type AmountUnit = (typeof AMOUNT_UNITS)[number];
@@ -80,15 +82,33 @@ export function toAmountInput(mandays: number): { amount: string; unit: AmountUn
     return { amount: String(minutes / MINUTES_PER_MANDAY), unit: "mandays" };
   }
 
-  return minutes < 60
-    ? { amount: String(minutes), unit: "minutes" }
-    : { amount: String(minutes / 60), unit: "hours" };
+  // Quarter hours stay short as hours (1.25); anything else, e.g. 70, reads better as minutes.
+  return minutes >= 60 && minutes % 15 === 0
+    ? { amount: String(minutes / 60), unit: "hours" }
+    : { amount: String(minutes), unit: "minutes" };
 }
 export const MAX_PROJECT_LENGTH = 200;
 export const MAX_REASON_LENGTH = 2000;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const TIME_WINDOW = /^(\d{1,2})(?:[:.](\d{2}))?\s*(?:-|–|—|ถึง|to)\s*(\d{1,2})(?:[:.](\d{2}))?$/i;
+
+// Accepts what people type, e.g. "13.00-14.00", "13:30 - 14:15" or "9-10".
+// Slack's timepicker only lists whole hours, so the window is free text.
+export function parseTimeWindow(text: string): { startTime: string; endTime: string } | null {
+  const match = TIME_WINDOW.exec(text.trim());
+
+  if (!match) {
+    return null;
+  }
+
+  const [, startHour, startMinute = "00", endHour, endMinute = "00"] = match;
+  const startTime = `${startHour.padStart(2, "0")}:${startMinute}`;
+  const endTime = `${endHour.padStart(2, "0")}:${endMinute}`;
+
+  return TIME.test(startTime) && TIME.test(endTime) ? { startTime, endTime } : null;
+}
 
 function minutesOfDay(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
@@ -123,17 +143,15 @@ export function workingDays(start: string, end: string) {
 }
 
 // Raw form values, keyed by the modal's block_ids.
-export type ResourceRequestForm = Partial<
+export type ResourceRequestForm = { person?: string[] } & Partial<
   Record<
-    | "person"
     | "owner_pm"
     | "project"
     | "amount"
     | "unit"
     | "start_date"
     | "end_date"
-    | "start_time"
-    | "end_time"
+    | "time_window"
     | "urgency"
     | "reason",
     string
@@ -154,12 +172,17 @@ export function validateResourceRequestForm(
   let minutes = 0;
   const startDate = form.start_date ?? "";
   const endDate = form.end_date ?? "";
-  const startTime = form.start_time || null;
-  const endTime = form.end_time || null;
+  const rawWindow = form.time_window?.trim() ?? "";
+  const window = rawWindow ? parseTimeWindow(rawWindow) : null;
+  const startTime = window?.startTime ?? null;
+  const endTime = window?.endTime ?? null;
   const urgency = URGENCIES.find((value) => value === form.urgency);
+  const personIds = [...new Set(form.person ?? [])];
 
-  if (!form.person) {
+  if (!personIds.length) {
     errors.person = "กรุณาเลือกคนที่ต้องการยืม";
+  } else if (personIds.length > MAX_PEOPLE) {
+    errors.person = `เลือกได้ไม่เกิน ${MAX_PEOPLE} คนต่อคำขอ`;
   }
 
   if (!form.owner_pm) {
@@ -185,8 +208,8 @@ export function validateResourceRequestForm(
     minutes = Math.round(exact);
 
     // The tolerance absorbs float noise such as 1.1 * 60.
-    if (Math.abs(exact - minutes) > 1e-6 || minutes % MINUTE_STEP !== 0) {
-      errors.amount = "ใส่ทีละ 15 นาที เช่น 15 นาที, 1.5 ชั่วโมง, 0.5 manday";
+    if (Math.abs(exact - minutes) > 1e-6 || minutes === 0) {
+      errors.amount = "ใส่เป็นนาทีเต็ม เช่น 10 นาที, 1.5 ชั่วโมง, 0.5 manday";
     } else if (minutes > MAX_MANDAYS * MINUTES_PER_MANDAY) {
       errors.amount = `ขอได้ไม่เกิน ${MAX_MANDAYS} manday`;
     }
@@ -202,20 +225,14 @@ export function validateResourceRequestForm(
     errors.end_date = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
   }
 
-  if (startTime && !TIME.test(startTime)) {
-    errors.start_time = "เวลาไม่ถูกต้อง";
-  } else if (endTime && !TIME.test(endTime)) {
-    errors.end_time = "เวลาไม่ถูกต้อง";
-  } else if (startTime && !endTime) {
-    errors.end_time = "ใส่เวลาสิ้นสุดด้วย หรือลบเวลาเริ่มออก";
-  } else if (endTime && !startTime) {
-    errors.start_time = "ใส่เวลาเริ่มด้วย หรือลบเวลาสิ้นสุดออก";
+  if (rawWindow && !window) {
+    errors.time_window = "ใส่ช่วงเวลาแบบ 13:00-14:00";
   } else if (startTime && endTime && endTime <= startTime) {
-    errors.end_time = "เวลาสิ้นสุดต้องหลังเวลาเริ่ม";
+    errors.time_window = "เวลาสิ้นสุดต้องหลังเวลาเริ่ม";
   }
 
   const mandays = minutes / MINUTES_PER_MANDAY;
-  const hasTimeError = Boolean(errors.start_time || errors.end_time);
+  const hasTimeError = Boolean(errors.time_window);
 
   if (minutes && !errors.amount && !errors.start_date && !errors.end_date && !hasTimeError) {
     const days = workingDays(startDate, endDate);
@@ -238,14 +255,14 @@ export function validateResourceRequestForm(
     errors.reason = `ยาวได้ไม่เกิน ${MAX_REASON_LENGTH} ตัวอักษร`;
   }
 
-  if (Object.keys(errors).length || !form.person || !form.owner_pm || !urgency) {
+  if (Object.keys(errors).length || !form.owner_pm || !urgency) {
     return { ok: false, errors };
   }
 
   return {
     ok: true,
     input: {
-      personId: form.person,
+      personIds,
       ownerPmId: form.owner_pm,
       project,
       mandays,
@@ -444,7 +461,7 @@ function byStartDate(a: ResourceRequest, b: ResourceRequest) {
   );
 }
 
-// Other requests that borrow the same person over overlapping dates and times.
+// Other requests that borrow any of the same people over overlapping dates and times.
 export function findOverlaps(
   request: ResourceRequest,
   others: readonly ResourceRequest[],
@@ -452,7 +469,7 @@ export function findOverlaps(
   const same = others.filter(
     (other) =>
       other.requestId !== request.requestId &&
-      other.personId === request.personId &&
+      other.personIds.some((personId) => request.personIds.includes(personId)) &&
       rangesOverlap(rangeOf(other), rangeOf(request)) &&
       timesOverlap(other, request),
   );
@@ -475,7 +492,9 @@ export function summarizeBorrowed(
       continue;
     }
 
-    byPerson.set(request.personId, [...(byPerson.get(request.personId) ?? []), request]);
+    for (const personId of request.personIds) {
+      byPerson.set(personId, [...(byPerson.get(personId) ?? []), request]);
+    }
   }
 
   return [...byPerson.entries()]

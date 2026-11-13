@@ -10,6 +10,7 @@ import {
   monthOf,
   newResourceRequest,
   newResourceRequestId,
+  parseTimeWindow,
   rangesOverlap,
   summarizeBorrowed,
   timesOverlap,
@@ -31,7 +32,7 @@ const ADMINS = [ADMIN];
 const NOW = new Date("2026-11-11T03:00:00Z");
 
 const FORM: ResourceRequestForm = {
-  person: EARTH,
+  person: [EARTH],
   owner_pm: RIN,
   project: "Acme App",
   amount: "2",
@@ -66,7 +67,7 @@ test("accepts a complete form and trims text", () => {
   assert.deepEqual(result, {
     ok: true,
     input: {
-      personId: EARTH,
+      personIds: [EARTH],
       ownerPmId: RIN,
       project: "Acme",
       mandays: 1.5,
@@ -90,17 +91,17 @@ test("reports every missing field by block_id", () => {
   );
 });
 
-test("takes amounts in 15-minute steps in any unit", () => {
+test("takes any whole number of minutes in any unit", () => {
   for (const [amount, unit, mandays] of [
-    ["15", "minutes", 1 / 32],
-    ["30", "minutes", 1 / 16],
+    ["1", "minutes", 1 / 480],
+    ["10", "minutes", 10 / 480],
+    ["1.1", "hours", 66 / 480],
     ["1.25", "hours", 1.25 / 8],
-    ["1.5", "hours", 1.5 / 8],
+    ["0.3", "mandays", 144 / 480],
     ["0.5", "mandays", 0.5],
     ["100", "mandays", 100],
-    ["10", "minutes", null],
-    ["1.1", "hours", null],
-    ["0.3", "mandays", null],
+    ["10.5", "minutes", null],
+    ["0.01", "hours", null],
     ["0", "minutes", null],
     ["abc", "hours", null],
     ["101", "mandays", null],
@@ -117,9 +118,17 @@ test("shows an amount in the unit that reads naturally", () => {
     ["15 นาที", "30 นาที", "1 ชม. 30 นาที", "8 ชม. 30 นาที", "0.5 manday", "2 manday", "0 manday"],
   );
   assert.deepEqual(
-    [1 / 16, 1.25 / 8, 1.5].map(toAmountInput),
-    [{ amount: "30", unit: "minutes" }, { amount: "1.25", unit: "hours" }, { amount: "1.5", unit: "mandays" }],
+    [1 / 16, 1.25 / 8, 70 / 480, 1.5].map(toAmountInput),
+    [
+      { amount: "30", unit: "minutes" },
+      { amount: "1.25", unit: "hours" },
+      { amount: "70", unit: "minutes" },
+      { amount: "1.5", unit: "mandays" },
+    ],
   );
+  // Minutes are not exact in a float; totals still read as whole minutes.
+  assert.equal(formatAmount([7, 13, 40].reduce((sum, minutes) => sum + minutes / 480, 0)), "1 ชม.");
+  assert.equal(formatAmount(7 / 480), "7 นาที");
 });
 
 test("refuses an end date before the start date", () => {
@@ -231,26 +240,42 @@ test("a rejected or cancelled request cannot be cancelled or approved", () => {
 
 test("takes an optional time window that applies to every day", () => {
   const oneDay = { ...FORM, start_date: "2027-07-02", end_date: "2027-07-02" }; // a Friday
-  const ok = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", start_time: "13:00", end_time: "14:00" });
+  const ok = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", time_window: "13.00-14.00" });
 
   assert.ok(ok.ok);
   assert.deepEqual([ok.input.startTime, ok.input.endTime, ok.input.mandays], ["13:00", "14:00", 1 / 8]);
 
-  for (const [start_time, end_time, field] of [
-    ["13:00", undefined, "end_time"],
-    [undefined, "14:00", "start_time"],
-    ["14:00", "13:00", "end_time"],
-    ["13:00", "13:00", "end_time"],
-    ["25:00", "26:00", "start_time"],
-  ]) {
-    const result = validateResourceRequestForm({ ...oneDay, amount: "30", unit: "minutes", start_time, end_time });
-    assert.deepEqual(result.ok ? [] : Object.keys(result.errors), [field], `${start_time}–${end_time}`);
+  const blank = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", time_window: "  " });
+  assert.ok(blank.ok);
+  assert.deepEqual([blank.input.startTime, blank.input.endTime], [null, null]);
+
+  for (const time_window of ["14:00-13:00", "13:00-13:00", "25:00-26:00", "บ่ายโมง", "13:00"]) {
+    const result = validateResourceRequestForm({ ...oneDay, amount: "30", unit: "minutes", time_window });
+    assert.deepEqual(result.ok ? [] : Object.keys(result.errors), ["time_window"], time_window);
+  }
+});
+
+test("reads the time window the way people type it", () => {
+  for (const [text, window] of [
+    ["13:00-14:00", ["13:00", "14:00"]],
+    ["13.00-14.00", ["13:00", "14:00"]],
+    ["13:30 - 14:15", ["13:30", "14:15"]],
+    ["9-10", ["09:00", "10:00"]],
+    ["9.30–10", ["09:30", "10:00"]],
+    ["13.00 ถึง 14.00", ["13:00", "14:00"]],
+  ] as const) {
+    const parsed = parseTimeWindow(text);
+    assert.deepEqual(parsed && [parsed.startTime, parsed.endTime], window, text);
+  }
+
+  for (const text of ["13:00", "13:60-14:00", "24:00-25:00", "1pm-2pm"]) {
+    assert.equal(parseTimeWindow(text), null, text);
   }
 });
 
 test("caps the amount at the window on each working day", () => {
   // Tue 1 Dec to Fri 4 Dec is four working days of one hour each.
-  const window = { ...FORM, start_time: "13:00", end_time: "14:00" };
+  const window = { ...FORM, time_window: "13:00-14:00" };
 
   assert.ok(validateResourceRequestForm({ ...window, amount: "4", unit: "hours" }).ok);
   assert.deepEqual(validateResourceRequestForm({ ...window, amount: "4.25", unit: "hours" }), {
@@ -258,7 +283,7 @@ test("caps the amount at the window on each working day", () => {
     errors: { amount: "ช่วงที่เลือกมีวันทำงาน 4 วัน วันละ 13:00–14:00 รวม 4 ชม. แต่ขอ 4 ชม. 15 นาที" },
   });
   // A window longer than eight hours still counts as one manday a day.
-  assert.equal(validateResourceRequestForm({ ...FORM, amount: "4.25", start_time: "08:00", end_time: "18:00" }).ok, false);
+  assert.equal(validateResourceRequestForm({ ...FORM, amount: "4.25", time_window: "08:00-18:00" }).ok, false);
 });
 
 test("compares daily time windows; no window meets any window", () => {
@@ -286,7 +311,7 @@ test("finds approved and pending requests for the same person over the same date
     current,
     approved,
     pending,
-    request({ personId: "U_OTHER" }),
+    request({ personIds: ["U_OTHER"] }),
     request({ startDate: "2026-12-14", endDate: "2026-12-15" }),
     request({ status: "Rejected" }),
   ];
@@ -297,15 +322,40 @@ test("finds approved and pending requests for the same person over the same date
   assert.deepEqual(overlaps.pending.map((other) => other.requestId), [pending.requestId]);
 });
 
+test("validates the people to borrow", () => {
+  const people = (person: string[]) => validateResourceRequestForm({ ...FORM, person });
+  const twice = people([EARTH, "U_MOON", EARTH]);
+
+  assert.ok(twice.ok);
+  assert.deepEqual(twice.input.personIds, [EARTH, "U_MOON"]);
+  const none = people([]);
+  assert.deepEqual(none.ok ? null : Object.keys(none.errors), ["person"]);
+
+  const eleven = people(Array.from({ length: 11 }, (_, index) => `U${index}`));
+  assert.deepEqual(eleven.ok ? null : eleven.errors, { person: "เลือกได้ไม่เกิน 10 คนต่อคำขอ" });
+});
+
+test("a request for several people overlaps each of them and counts for each in /borrowed", () => {
+  const pair = request({ personIds: ["U_A", "U_B"], mandays: 1, status: "Approved" });
+  const forB = request({ personIds: ["U_B"] });
+
+  assert.deepEqual(findOverlaps(forB, [pair]).approved.map((other) => other.requestId), [pair.requestId]);
+  assert.deepEqual(findOverlaps(request({ personIds: ["U_C"] }), [pair]).approved, []);
+  assert.deepEqual(
+    summarizeBorrowed([pair], monthOf("2026-12-15")).map((person) => [person.personId, person.totalMandays]),
+    [["U_A", 1], ["U_B", 1]],
+  );
+});
+
 test("sums approved borrowings by person, busiest first", () => {
   const people = summarizeBorrowed(
     [
-      request({ personId: "U_A", mandays: 1, status: "Approved" }),
-      request({ personId: "U_B", mandays: 2, project: "B1", status: "Approved" }),
-      request({ personId: "U_B", mandays: 1, project: "B2", startDate: "2026-11-30", endDate: "2026-12-01", status: "Approved" }),
-      request({ personId: "U_C", mandays: 3 }), // pending: not counted
-      request({ personId: "U_D", status: "Cancelled" }),
-      request({ personId: "U_E", startDate: "2027-01-04", endDate: "2027-01-05", status: "Approved" }),
+      request({ personIds: ["U_A"], mandays: 1, status: "Approved" }),
+      request({ personIds: ["U_B"], mandays: 2, project: "B1", status: "Approved" }),
+      request({ personIds: ["U_B"], mandays: 1, project: "B2", startDate: "2026-11-30", endDate: "2026-12-01", status: "Approved" }),
+      request({ personIds: ["U_C"], mandays: 3 }), // pending: not counted
+      request({ personIds: ["U_D"], status: "Cancelled" }),
+      request({ personIds: ["U_E"], startDate: "2027-01-04", endDate: "2027-01-05", status: "Approved" }),
     ],
     monthOf("2026-12-15"),
   );

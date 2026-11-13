@@ -37,7 +37,7 @@ import {
   deleteResourceRequest,
   getResourceRequest,
   insertResourceRequest,
-  listResourceRequestsForPerson,
+  listResourceRequestsForPeople,
   saveResourceRequestCard,
   updateResourceRequest,
 } from "@/libs/repositories/resource-request-repository";
@@ -282,12 +282,12 @@ async function buildDecisionModal(
     return createRequestInfoModal(request);
   }
 
-  // Approving shows whether the person is already lent out over the same dates.
+  // Approving shows whether the people are already lent out over the same dates.
   // If that lookup fails, the PM can still decide, just without the warning.
   try {
     return createApproveModal(
       request,
-      findOverlaps(request, await listResourceRequestsForPerson(request.personId)),
+      findOverlaps(request, await listResourceRequestsForPeople(request.personIds)),
     );
   } catch (error) {
     console.error("Resource request: overlap check failed", error);
@@ -377,7 +377,9 @@ async function applyDecision(requestId: string, actorId: string, decision: Resou
 
   if (decision.type === "approve") {
     await sendDm(request.requesterId, notices.approvedToRequester(request, actorId));
-    await sendDm(request.personId, notices.approvedToPerson(request, actorId));
+    for (const personId of request.personIds) {
+      await sendDm(personId, notices.approvedToPerson(request, actorId));
+    }
   } else if (decision.type === "reject") {
     await sendDm(request.requesterId, notices.rejected(request, actorId));
   } else {
