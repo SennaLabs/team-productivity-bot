@@ -89,6 +89,23 @@ export const MAX_REASON_LENGTH = 2000;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const TIME_WINDOW = /^(\d{1,2})(?:[:.](\d{2}))?\s*(?:-|–|—|ถึง|to)\s*(\d{1,2})(?:[:.](\d{2}))?$/i;
+
+// Accepts what people type, e.g. "13.00-14.00", "13:30 - 14:15" or "9-10".
+// Slack's timepicker only lists whole hours, so the window is free text.
+export function parseTimeWindow(text: string): { startTime: string; endTime: string } | null {
+  const match = TIME_WINDOW.exec(text.trim());
+
+  if (!match) {
+    return null;
+  }
+
+  const [, startHour, startMinute = "00", endHour, endMinute = "00"] = match;
+  const startTime = `${startHour.padStart(2, "0")}:${startMinute}`;
+  const endTime = `${endHour.padStart(2, "0")}:${endMinute}`;
+
+  return TIME.test(startTime) && TIME.test(endTime) ? { startTime, endTime } : null;
+}
 
 function minutesOfDay(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
@@ -132,8 +149,7 @@ export type ResourceRequestForm = Partial<
     | "unit"
     | "start_date"
     | "end_date"
-    | "start_time"
-    | "end_time"
+    | "time_window"
     | "urgency"
     | "reason",
     string
@@ -154,8 +170,10 @@ export function validateResourceRequestForm(
   let minutes = 0;
   const startDate = form.start_date ?? "";
   const endDate = form.end_date ?? "";
-  const startTime = form.start_time || null;
-  const endTime = form.end_time || null;
+  const rawWindow = form.time_window?.trim() ?? "";
+  const window = rawWindow ? parseTimeWindow(rawWindow) : null;
+  const startTime = window?.startTime ?? null;
+  const endTime = window?.endTime ?? null;
   const urgency = URGENCIES.find((value) => value === form.urgency);
 
   if (!form.person) {
@@ -202,20 +220,14 @@ export function validateResourceRequestForm(
     errors.end_date = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
   }
 
-  if (startTime && !TIME.test(startTime)) {
-    errors.start_time = "เวลาไม่ถูกต้อง";
-  } else if (endTime && !TIME.test(endTime)) {
-    errors.end_time = "เวลาไม่ถูกต้อง";
-  } else if (startTime && !endTime) {
-    errors.end_time = "ใส่เวลาสิ้นสุดด้วย หรือลบเวลาเริ่มออก";
-  } else if (endTime && !startTime) {
-    errors.start_time = "ใส่เวลาเริ่มด้วย หรือลบเวลาสิ้นสุดออก";
+  if (rawWindow && !window) {
+    errors.time_window = "ใส่ช่วงเวลาแบบ 13:00-14:00";
   } else if (startTime && endTime && endTime <= startTime) {
-    errors.end_time = "เวลาสิ้นสุดต้องหลังเวลาเริ่ม";
+    errors.time_window = "เวลาสิ้นสุดต้องหลังเวลาเริ่ม";
   }
 
   const mandays = minutes / MINUTES_PER_MANDAY;
-  const hasTimeError = Boolean(errors.start_time || errors.end_time);
+  const hasTimeError = Boolean(errors.time_window);
 
   if (minutes && !errors.amount && !errors.start_date && !errors.end_date && !hasTimeError) {
     const days = workingDays(startDate, endDate);

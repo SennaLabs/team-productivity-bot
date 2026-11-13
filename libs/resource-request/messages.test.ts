@@ -135,7 +135,7 @@ test("reads the submitted form back from Slack's view state", () => {
           amount: { value: { value: "1.5" } },
           unit: { value: { selected_option: { value: "hours" } } },
           start_date: { value: { selected_date: "2026-12-01" } },
-          start_time: { value: { selected_time: "13:00" } },
+          time_window: { value: { value: "13.00-14.00" } },
         },
       },
     },
@@ -149,8 +149,7 @@ test("reads the submitted form back from Slack's view state", () => {
     unit: "hours",
     start_date: "2026-12-01",
     end_date: undefined,
-    start_time: "13:00",
-    end_time: undefined,
+    time_window: "13.00-14.00",
     urgency: undefined,
     reason: undefined,
   });
@@ -170,9 +169,8 @@ test("shows a daily time window with the dates", () => {
 test("the edit form keeps the time window", () => {
   const json = JSON.stringify(createResourceRequestModal([], request({ startTime: "13:00", endTime: "14:00" })));
 
-  assert.ok(json.includes('"initial_time":"13:00"'));
-  assert.ok(json.includes('"initial_time":"14:00"'));
-  assert.ok(!JSON.stringify(createResourceRequestModal([], request())).includes("initial_time"));
+  assert.ok(json.includes('"initial_value":"13:00-14:00"'));
+  assert.ok(!JSON.stringify(createResourceRequestModal([], request())).includes('"initial_value":"13:00-14:00"'));
 });
 
 test("describes what an edit changed", () => {

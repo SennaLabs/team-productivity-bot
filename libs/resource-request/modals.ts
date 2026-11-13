@@ -84,18 +84,21 @@ function datePicker(blockId: string, label: string, initial?: string) {
   };
 }
 
-function timePicker(blockId: string, label: string, initial: string | null | undefined, hint?: string) {
+function timeWindowInput(existing?: ResourceRequest) {
+  const initial =
+    existing?.startTime && existing.endTime ? `${existing.startTime}-${existing.endTime}` : undefined;
+
   return {
     type: "input",
-    block_id: blockId,
+    block_id: "time_window",
     optional: true,
-    label: plain(label),
-    ...(hint ? { hint: plain(hint) } : {}),
+    label: plain("ช่วงเวลา (ไม่บังคับ)"),
+    hint: plain("ใช้กับทุกวันในช่วงที่เลือก เว้นว่างถ้าไม่ระบุเวลา"),
     element: {
-      type: "timepicker",
+      type: "plain_text_input",
       action_id: INPUT,
-      placeholder: plain("ไม่ระบุ"),
-      ...(initial ? { initial_time: initial } : {}),
+      placeholder: plain("เช่น 13:00-14:00 หรือ 9.30-10.15"),
+      ...(initial ? { initial_value: initial } : {}),
     },
   };
 }
@@ -161,13 +164,7 @@ export function createResourceRequestModal(
       ),
       datePicker("start_date", "ช่วงวันที่ เริ่ม", existing?.startDate),
       datePicker("end_date", "ช่วงวันที่ สิ้นสุด", existing?.endDate),
-      timePicker(
-        "start_time",
-        "เวลาเริ่ม (ไม่บังคับ)",
-        existing?.startTime,
-        "ใส่เมื่อต้องการช่วงเวลาเฉพาะ ใช้กับทุกวันในช่วงที่เลือก เช่น 13:00–14:00",
-      ),
-      timePicker("end_time", "เวลาสิ้นสุด (ไม่บังคับ)", existing?.endTime),
+      timeWindowInput(existing),
       staticSelect("urgency", "ความเร่งด่วน", URGENCIES, existing?.urgency ?? "Normal"),
       {
         type: "input",
@@ -192,7 +189,6 @@ function readInput(payload: SlackInteractionPayload, blockId: string) {
   return (
     input?.selected_option?.value ??
     input?.selected_date ??
-    input?.selected_time ??
     input?.selected_user ??
     input?.value ??
     undefined
@@ -208,8 +204,7 @@ export function readResourceRequestForm(payload: SlackInteractionPayload): Resou
     unit: readInput(payload, "unit"),
     start_date: readInput(payload, "start_date"),
     end_date: readInput(payload, "end_date"),
-    start_time: readInput(payload, "start_time"),
-    end_time: readInput(payload, "end_time"),
+    time_window: readInput(payload, "time_window"),
     urgency: readInput(payload, "urgency"),
     reason: readInput(payload, "reason"),
   };

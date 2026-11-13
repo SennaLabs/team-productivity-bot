@@ -10,6 +10,7 @@ import {
   monthOf,
   newResourceRequest,
   newResourceRequestId,
+  parseTimeWindow,
   rangesOverlap,
   summarizeBorrowed,
   timesOverlap,
@@ -231,26 +232,42 @@ test("a rejected or cancelled request cannot be cancelled or approved", () => {
 
 test("takes an optional time window that applies to every day", () => {
   const oneDay = { ...FORM, start_date: "2027-07-02", end_date: "2027-07-02" }; // a Friday
-  const ok = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", start_time: "13:00", end_time: "14:00" });
+  const ok = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", time_window: "13.00-14.00" });
 
   assert.ok(ok.ok);
   assert.deepEqual([ok.input.startTime, ok.input.endTime, ok.input.mandays], ["13:00", "14:00", 1 / 8]);
 
-  for (const [start_time, end_time, field] of [
-    ["13:00", undefined, "end_time"],
-    [undefined, "14:00", "start_time"],
-    ["14:00", "13:00", "end_time"],
-    ["13:00", "13:00", "end_time"],
-    ["25:00", "26:00", "start_time"],
-  ]) {
-    const result = validateResourceRequestForm({ ...oneDay, amount: "30", unit: "minutes", start_time, end_time });
-    assert.deepEqual(result.ok ? [] : Object.keys(result.errors), [field], `${start_time}–${end_time}`);
+  const blank = validateResourceRequestForm({ ...oneDay, amount: "1", unit: "hours", time_window: "  " });
+  assert.ok(blank.ok);
+  assert.deepEqual([blank.input.startTime, blank.input.endTime], [null, null]);
+
+  for (const time_window of ["14:00-13:00", "13:00-13:00", "25:00-26:00", "บ่ายโมง", "13:00"]) {
+    const result = validateResourceRequestForm({ ...oneDay, amount: "30", unit: "minutes", time_window });
+    assert.deepEqual(result.ok ? [] : Object.keys(result.errors), ["time_window"], time_window);
+  }
+});
+
+test("reads the time window the way people type it", () => {
+  for (const [text, window] of [
+    ["13:00-14:00", ["13:00", "14:00"]],
+    ["13.00-14.00", ["13:00", "14:00"]],
+    ["13:30 - 14:15", ["13:30", "14:15"]],
+    ["9-10", ["09:00", "10:00"]],
+    ["9.30–10", ["09:30", "10:00"]],
+    ["13.00 ถึง 14.00", ["13:00", "14:00"]],
+  ] as const) {
+    const parsed = parseTimeWindow(text);
+    assert.deepEqual(parsed && [parsed.startTime, parsed.endTime], window, text);
+  }
+
+  for (const text of ["13:00", "13:60-14:00", "24:00-25:00", "1pm-2pm"]) {
+    assert.equal(parseTimeWindow(text), null, text);
   }
 });
 
 test("caps the amount at the window on each working day", () => {
   // Tue 1 Dec to Fri 4 Dec is four working days of one hour each.
-  const window = { ...FORM, start_time: "13:00", end_time: "14:00" };
+  const window = { ...FORM, time_window: "13:00-14:00" };
 
   assert.ok(validateResourceRequestForm({ ...window, amount: "4", unit: "hours" }).ok);
   assert.deepEqual(validateResourceRequestForm({ ...window, amount: "4.25", unit: "hours" }), {
@@ -258,7 +275,7 @@ test("caps the amount at the window on each working day", () => {
     errors: { amount: "ช่วงที่เลือกมีวันทำงาน 4 วัน วันละ 13:00–14:00 รวม 4 ชม. แต่ขอ 4 ชม. 15 นาที" },
   });
   // A window longer than eight hours still counts as one manday a day.
-  assert.equal(validateResourceRequestForm({ ...FORM, amount: "4.25", start_time: "08:00", end_time: "18:00" }).ok, false);
+  assert.equal(validateResourceRequestForm({ ...FORM, amount: "4.25", time_window: "08:00-18:00" }).ok, false);
 });
 
 test("compares daily time windows; no window meets any window", () => {
